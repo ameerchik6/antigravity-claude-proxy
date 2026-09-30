@@ -49,7 +49,9 @@ export class HealthTracker {
             record.score + recovery
         );
 
-        return recoveredScore;
+        // Round to eliminate floating-point precision noise
+        // (e.g. 75.00000277777778 -> 75)
+        return Math.round(recoveredScore * 10000) / 10000;
     }
 
     /**
