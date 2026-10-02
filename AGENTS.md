@@ -14,6 +14,7 @@ npm run dev:full     # watch CSS + server files
 
 npm start -- --strategy=sticky       # cache-optimized (default is hybrid)
 npm start -- --strategy=round-robin  # load-balanced
+npm start -- --strategy=agentic      # long-horizon capability optimized
 npm start -- --fallback              # fall back to alternate model on quota exhaustion
 npm start -- --dev-mode              # enables debug logging + dev tools (--debug is a legacy alias)
 
@@ -29,6 +30,27 @@ npm test                             # requires server running on port 8080
 node tests/run-all.cjs <filter>      # run matching tests only
 node tests/test-strategies.cjs       # strategy unit tests (no server needed)
 ```
+
+## New Features
+
+### Agentic Strategy
+- **Purpose**: Prioritizes accounts with sustained long-horizon capability (many consecutive successful requests)
+- **Paper Reference**: Nanbeige4.1-3B (arXiv:2602.13367) - 600 tool-call turn capability
+- **Configuration**: Set via `--strategy=agentic` or in config
+- **Scoring**: Combines base usability + agentic bonus (scales with consecutive successes) + LRU fairness
+- **Thresholds**: Configurable `minConsecutiveSuccesses` (default: 10) and `agenticBonus` (default: 50)
+
+### Local Model Routing
+- **Purpose**: Route nanbeige* and local-* models directly to llama-server (port 10000)
+- **Bypass**: Skips Cloud Code pipeline for local models
+- **Format**: Forwards Anthropic /v1/messages natively (no conversion needed)
+- **Configuration**: Set `LOCAL_MODEL_PORT` env var (default: 10000)
+- **Models**: Injects local model entry at top of `/v1/models` list
+
+### Request Field Stripping
+- **Purpose**: Remove unsupported top-level fields before processing
+- **Supported Fields**: model, messages, stream, system, max_tokens, tools, tool_choice, thinking, top_p, top_k, temperature, stop_sequences, metadata, betas
+- **Example**: Strips 'safeguards' field from Codex GPT-OSS model requests
 
 ## Non-obvious things
 
