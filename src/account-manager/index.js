@@ -49,6 +49,9 @@ export class AccountManager {
     #tokenCache = new Map(); // email -> { token, extractedAt }
     #projectCache = new Map(); // email -> projectId
 
+    // Pair-wise comparison matrix for account-vs-account preference
+    #pairwiseResults = new Map(); // `${winnerEmail}:${loserEmail}:${modelId}` -> { wins: number, total: number, lastUpdated: number }
+
     constructor(configPath = ACCOUNT_CONFIG_PATH, strategyName = null) {
         this.#configPath = configPath;
         // Strategy name can be set at construction or later via initialize
@@ -276,6 +279,91 @@ export class AccountManager {
             return this.#strategy.getHealthTracker();
         }
         return null;
+    }
+
+    /**
+     * Record a pair-wise comparison result between two accounts
+     * Mirrors the Nanbeige4.1-3B paper's swap-consistency regularizer
+     * @param {string} winnerEmail - Email of the winning account
+     * @param {string} loserEmail - Email of the losing account
+     * @param {string} modelId - Model ID for the comparison
+     * @param {boolean} winnerWon - Whether the winner actually won (for swap consistency)
+     */
+    recordPairwiseResult(winnerEmail, loserEmail, modelId, winnerWon = true) {
+        if (!winnerEmail || !loserEmail || winnerEmail === loserEmail) return;
+
+        const key = `${winnerEmail}:${loserEmail}:${modelId}`;
+        const reverseKey = `${loserEmail}:${winnerEmail}:${modelId}`;
+
+        // Record the primary result
+        const existing = this.#pairwiseResults.get(key) || { wins: 0, total: 0, lastUpdated: 0 };
+        existing.total++;
+        if (winnerWon) existing.wins++;
+        existing.lastUpdated = Date.now();
+        this.#pairwiseResults.set(key, existing);
+
+        // For swap consistency: record the inverse with opposite outcome
+        const reverseExisting = this.#pairwiseResults.get(reverseKey) || { wins: 0, total: 0, lastUpdated: 0 };
+        reverseExisting.total++;
+        if (!winnerWon) reverseExisting.wins++;
+        reverseExisting.lastUpdated = Date.now();
+        this.#pairwiseResults.set(reverseKey, reverseExisting);
+
+        // Save periodically (not every time to avoid disk I/O overhead)
+        if (existing.total % 10 === 0) {
+            this.saveToDisk();
+        }
+    }
+
+    /**
+     * Get the pair-wise bias score for an account against its peers
+     * Returns a score indicating how often this account wins vs others
+     * @param {string} email - Email of the account
+     * @param {string} modelId - Model ID to filter
+     * @returns {number} Bias score (0-100, higher = more wins)
+     */
+    getPairwiseBias(email, modelId) {
+        let totalWins = 0;
+        let totalComparisons = 0;
+
+        for (const [key, result] of this.#pairwiseResults.entries()) {
+            if (!key.includes(modelId)) continue;
+
+            const [winner, loser] = key.split(':');
+            if (winner === email) {
+                totalWins += result.wins;
+                totalComparisons += result.total;
+            } else if (loser === email) {
+                totalComparisons += result.total;
+            }
+        }
+
+        if (totalComparisons === 0) return 50; // Neutral if no data
+
+        return Math.round((totalWins / totalComparisons) * 100);
+    }
+
+    /**
+     * Get the account with the highest pair-wise bias for a model
+     * @param {string} modelId - Model ID
+     * @returns {string|null} Email of the most preferred account, or null
+     */
+    getBestPairwiseAccount(modelId) {
+        const accounts = this.#accounts.filter(a => a.enabled !== false && !a.isInvalid);
+        if (accounts.length === 0) return null;
+
+        let bestEmail = null;
+        let bestScore = -1;
+
+        for (const account of accounts) {
+            const score = this.getPairwiseBias(account.email, modelId);
+            if (score > bestScore) {
+                bestScore = score;
+                bestEmail = account.email;
+            }
+        }
+
+        return bestEmail;
     }
 
     /**

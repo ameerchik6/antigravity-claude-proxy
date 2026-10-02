@@ -32,9 +32,10 @@ export class HealthTracker {
     /**
      * Get the health score for an account
      * @param {string} email - Account email
+     * @param {number} [recentRequestCount] - Number of recent requests (for progressive context scaling)
      * @returns {number} Current health score (with passive recovery applied)
      */
-    getScore(email) {
+    getScore(email, recentRequestCount = 0) {
         const record = this.#scores.get(email);
         if (!record) {
             return this.#config.initial;
@@ -48,6 +49,20 @@ export class HealthTracker {
             this.#config.maxScore,
             record.score + recovery
         );
+
+        // Progressive context scaling: adjust threshold based on recent request count
+        // Mirrors the Nanbeige4.1-3B paper's 32k→64k→256k context progression
+        if (recentRequestCount > 0) {
+            // Scale the effective threshold based on request volume
+            // More requests = stricter threshold (more "context" = more data to validate)
+            const contextFactor = Math.min(recentRequestCount / 100, 3); // Cap at 3x
+            const adjustedThreshold = this.#config.minUsable * (1 + Math.log1p(contextFactor) * 0.1);
+            // If score is below adjusted threshold, apply a penalty
+            if (recoveredScore < adjustedThreshold) {
+                const penalty = (adjustedThreshold - recoveredScore) * 0.05;
+                return Math.max(0, recoveredScore - penalty);
+            }
+        }
 
         // Round to eliminate floating-point precision noise
         // (e.g. 75.00000277777778 -> 75)
