@@ -683,23 +683,33 @@ app.get('/v1/models', async (req, res) => {
         if (!account) {
             return res.status(503).json({
                 type: 'error',
-                error: {
-                    type: 'api_error',
-                    message: 'No accounts available'
-                }
+                error: { type: 'api_error', message: 'No accounts available' }
             });
         }
         const token = await accountManager.getTokenForAccount(account);
         const models = await listModels(token);
-        res.json(models);
+
+        // Inject local models (nanbeige4.1-3b etc.) at the top of the list
+        // Paper: arXiv:2602.13367 — reasoning, coding, agentic SLM
+        const LOCAL_MODEL_PORT = parseInt(process.env.LOCAL_MODEL_PORT || '10000');
+        const localEntry = {
+            id: 'nanbeige4.1-3b',
+            object: 'model',
+            created: 1727740800,
+            owned_by: 'local',
+            display_name: 'Nanbeige 4.1 3B (local)',
+            description: `Local reasoning model on port ${LOCAL_MODEL_PORT}. Free, offline, thinking+coding+agentic. arXiv:2602.13367`,
+        };
+        const merged = {
+            object: 'list',
+            data: [localEntry, ...(models.data || [])],
+        };
+        res.json(merged);
     } catch (error) {
         logger.error('[API] Error listing models:', error);
         res.status(500).json({
             type: 'error',
-            error: {
-                type: 'api_error',
-                message: error.message
-            }
+            error: { type: 'api_error', message: error.message }
         });
     }
 });
@@ -732,6 +742,24 @@ app.post('/v1/messages', async (req, res) => {
         // Ensure account manager is initialized
         await ensureInitialized();
 
+        // Strip unsupported top-level request fields before processing.
+        // Some clients (e.g. Codex with GPT-OSS models) send fields like
+        // 'safeguards' that are not part of the Anthropic Messages API.
+        // Without this, the downstream conversion may fail with:
+        //   "OpenAI chat conversion does not support these top-level request fields: ['safeguards']"
+        const SUPPORTED_TOP_LEVEL_FIELDS = new Set([
+            'model', 'messages', 'stream', 'system', 'max_tokens',
+            'tools', 'tool_choice', 'thinking', 'top_p', 'top_k',
+            'temperature', 'stop_sequences', 'metadata', 'betas'
+        ]);
+        const unsupportedFields = Object.keys(req.body).filter(k => !SUPPORTED_TOP_LEVEL_FIELDS.has(k));
+        if (unsupportedFields.length > 0) {
+            logger.debug(`[Server] Stripping unsupported top-level request fields: ${unsupportedFields.join(', ')}`);
+            for (const field of unsupportedFields) {
+                delete req.body[field];
+            }
+        }
+
         const {
             model,
             messages,
@@ -757,7 +785,75 @@ app.post('/v1/messages', async (req, res) => {
 
         const modelId = requestedModel;
 
-        // Validate model ID before processing
+        // ── Local model routing ──────────────────────────────────────────────
+        // If the model is a local model (nanbeige* or local-*), bypass the Cloud
+        // Code pipeline and proxy directly to llama-server at localhost:10000.
+        // llama-server natively speaks Anthropic /v1/messages format (both
+        // streaming and non-streaming), so no conversion needed — just forward.
+        const LOCAL_MODEL_PORT = parseInt(process.env.LOCAL_MODEL_PORT || '10000');
+        const LOCAL_MODEL_URL  = `http://127.0.0.1:${LOCAL_MODEL_PORT}/v1/messages`;
+        const isLocalModel = /^nanbeige|^local-/i.test(modelId);
+
+        if (isLocalModel) {
+            logger.info(`[Local] Routing ${modelId} → llama-server @ ${LOCAL_MODEL_URL}`);
+
+            const localBody = JSON.stringify({
+                model:       modelId,
+                messages:    messages || req.body.messages,
+                max_tokens:  max_tokens || 4096,
+                stream:      !!stream,
+                ...(system      && { system }),
+                ...(tools       && { tools }),
+                ...(tool_choice && { tool_choice }),
+                ...(temperature !== undefined && { temperature }),
+                ...(top_p       !== undefined && { top_p }),
+            });
+
+            const fetch = (await import('node-fetch')).default;
+            const localRes = await fetch(LOCAL_MODEL_URL, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    localBody,
+                signal:  AbortSignal.timeout(300_000),
+            });
+
+            if (!localRes.ok) {
+                const errText = await localRes.text();
+                logger.error(`[Local] llama-server error ${localRes.status}: ${errText}`);
+                return res.status(localRes.status).json({
+                    type: 'error',
+                    error: { type: 'api_error', message: `Local model error: ${errText}` }
+                });
+            }
+
+            // Stream: pipe SSE directly
+            if (stream) {
+                res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                localRes.body.pipe(res);
+                localRes.body.on('end', () => res.end());
+                localRes.body.on('error', (e) => {
+                    logger.error(`[Local] Stream error: ${e.message}`);
+                    res.end();
+                });
+                return;
+            }
+
+            // Non-stream: forward JSON, optionally stripping thinking blocks
+            const localJson = await localRes.json();
+            if (!req.body.thinking && localJson.content) {
+                // Client didn't request thinking — strip thinking blocks so
+                // the response matches standard Anthropic non-thinking format.
+                // The reasoning is still computed (it improves answer quality),
+                // but not sent unless the caller explicitly asked for it.
+                localJson.content = localJson.content.filter(b => b.type !== 'thinking');
+            }
+            return res.json(localJson);
+        }
+        // ── End local model routing ──────────────────────────────────────────
+
+        // Validate model ID before processing (Cloud Code models only)
         const { account: validationAccount } = accountManager.selectAccount();
         if (validationAccount) {
             const token = await accountManager.getTokenForAccount(validationAccount);

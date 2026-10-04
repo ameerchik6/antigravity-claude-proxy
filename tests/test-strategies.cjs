@@ -976,7 +976,7 @@ async function runTests() {
     });
 
     test('STRATEGY_NAMES contains all valid strategies', () => {
-        assertDeepEqual(STRATEGY_NAMES, ['sticky', 'round-robin', 'hybrid']);
+        assertDeepEqual(STRATEGY_NAMES, ['sticky', 'round-robin', 'hybrid', 'agentic']);
     });
 
     test('DEFAULT_STRATEGY is hybrid', () => {

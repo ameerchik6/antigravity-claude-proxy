@@ -125,6 +125,13 @@ export async function fetchAvailableModels(token, projectId = null) {
                         throw new Error(`ACCOUNT_BANNED: ${errorText}`);
                     }
                 }
+                // Detect payment required error – provide clear guidance
+                if (response.status === 402) {
+                    const lower = (errorText || '').toLowerCase();
+                    if (lower.includes('payment required') || lower.includes('quota')) {
+                        throw new Error(`PAYMENT_REQUIRED: ${errorText}`);
+                    }
+                }
                 continue;
             }
 

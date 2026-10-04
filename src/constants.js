@@ -191,14 +191,15 @@ export const CAPACITY_JITTER_MAX_MS = 10000; // ±5s jitter range
 export const MIN_SIGNATURE_LENGTH = 50; // Minimum valid thinking signature length
 
 // Account selection strategies
-export const SELECTION_STRATEGIES = ['sticky', 'round-robin', 'hybrid'];
+export const SELECTION_STRATEGIES = ['sticky', 'round-robin', 'hybrid', 'agentic'];
 export const DEFAULT_SELECTION_STRATEGY = 'hybrid';
 
 // Strategy display labels
 export const STRATEGY_LABELS = {
     'sticky': 'Sticky (Cache Optimized)',
     'round-robin': 'Round Robin (Load Balanced)',
-    'hybrid': 'Hybrid (Smart Distribution)'
+    'hybrid': 'Hybrid (Smart Distribution)',
+    'agentic': 'Agentic (Long-Horizon Optimized)'
 };
 
 // Gemini-specific limits

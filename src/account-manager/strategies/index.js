@@ -7,6 +7,7 @@
 import { StickyStrategy } from './sticky-strategy.js';
 import { RoundRobinStrategy } from './round-robin-strategy.js';
 import { HybridStrategy } from './hybrid-strategy.js';
+import { AgenticStrategy } from './agentic-strategy.js';
 import { logger } from '../../utils/logger.js';
 import {
     SELECTION_STRATEGIES,
@@ -41,6 +42,10 @@ export function createStrategy(strategyName, config = {}) {
             logger.debug('[Strategy] Creating HybridStrategy');
             return new HybridStrategy(config);
 
+        case 'agentic':
+            logger.debug('[Strategy] Creating AgenticStrategy');
+            return new AgenticStrategy(config);
+
         default:
             logger.warn(`[Strategy] Unknown strategy "${strategyName}", falling back to ${DEFAULT_STRATEGY}`);
             return new HybridStrategy(config);
@@ -73,6 +78,7 @@ export function getStrategyLabel(name) {
 export { StickyStrategy } from './sticky-strategy.js';
 export { RoundRobinStrategy } from './round-robin-strategy.js';
 export { HybridStrategy } from './hybrid-strategy.js';
+export { AgenticStrategy } from './agentic-strategy.js';
 export { BaseStrategy } from './base-strategy.js';
 
 // Re-export trackers

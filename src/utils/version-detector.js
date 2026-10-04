@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'fs';
  * Detection priority (for each):
  *   1. Environment variable override
  *   2. product.json from local Antigravity app
- *   3. OS-specific detection (macOS plist / Windows exe)
+ *   3. OS-specific detection (macOS plist / Windows exe / Linux package managers)
  *   4. Hardcoded fallback
  */
 
@@ -25,16 +25,33 @@ const FALLBACK_USER_AGENT_VERSION = process.env.FALLBACK_ANTIGRAVITY_VERSION || 
 // Can be overridden via ANTIGRAVITY_CLIENT_VERSION_FALLBACK env var
 const FALLBACK_CLIENT_VERSION = process.env.ANTIGRAVITY_CLIENT_VERSION_FALLBACK || '1.110.0';
 
+// Cache TTL: 1 hour — avoids stale versions for the entire process lifetime
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
 let cachedUserAgent = null;
+let cachedUserAgentAt = 0;
 let cachedClientVersion = null;
+let cachedClientVersionAt = 0;
 let cachedProductJson = undefined; // undefined = not yet attempted
+let cachedProductJsonAt = 0;
 let loggedVersionInfo = false;
+
+/**
+ * Validates that a string looks like a semver version (X.Y.Z with optional extras).
+ * @param {string} str - The string to validate
+ * @returns {boolean} True if it matches a version pattern
+ */
+function isValidVersionString(str) {
+    return typeof str === 'string' && /^\d+\.\d+(\.\d+)?/.test(str);
+}
 
 /**
  * Compares two semver-ish version strings (X.Y.Z).
  * @returns {boolean} True if v1 > v2
  */
 function isVersionHigher(v1, v2) {
+    if (!isValidVersionString(v1) || !isValidVersionString(v2)) return false;
+
     const parts1 = v1.split('.').map(Number);
     const parts2 = v2.split('.').map(Number);
 
@@ -45,6 +62,34 @@ function isVersionHigher(v1, v2) {
         if (p1 < p2) return false;
     }
     return false;
+}
+
+/**
+ * Compares two semver-ish version strings (X.Y.Z).
+ * @returns {boolean} True if v1 >= v2
+ */
+function isVersionHigherOrEqual(v1, v2) {
+    if (!isValidVersionString(v1) || !isValidVersionString(v2)) return false;
+
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+        const p1 = parts1[i] || 0;
+        const p2 = parts2[i] || 0;
+        if (p1 > p2) return true;
+        if (p1 < p2) return false;
+    }
+    return true; // Equal versions return true (>= comparison)
+}
+
+/**
+ * Check if a cache entry has expired.
+ * @param {number} cachedAt - Timestamp when the value was cached
+ * @returns {boolean} True if the cache entry has expired or was never set
+ */
+function isCacheExpired(cachedAt) {
+    return !cachedAt || (Date.now() - cachedAt) > CACHE_TTL_MS;
 }
 
 /**
@@ -77,11 +122,13 @@ function getProductJsonPaths() {
 
 /**
  * Find and parse product.json from the local Antigravity installation.
- * Caches the result after first attempt.
+ * Caches the result after first attempt with TTL expiration.
  * @returns {Object|null} Parsed product.json or null
  */
 function getProductJson() {
-    if (cachedProductJson !== undefined) return cachedProductJson;
+    if (cachedProductJson !== undefined && !isCacheExpired(cachedProductJsonAt)) {
+        return cachedProductJson;
+    }
 
     for (const p of getProductJsonPaths()) {
         try {
@@ -89,6 +136,7 @@ function getProductJson() {
                 const content = JSON.parse(readFileSync(p, 'utf8'));
                 if (content && (content.version || content.ideVersion)) {
                     cachedProductJson = content;
+                    cachedProductJsonAt = Date.now();
                     return content;
                 }
             }
@@ -98,6 +146,7 @@ function getProductJson() {
     }
 
     cachedProductJson = null;
+    cachedProductJsonAt = Date.now();
     return null;
 }
 
@@ -114,7 +163,12 @@ function logVersionInfo(version, source) {
         } else {
             logger.debug(`X-Client-Version: ${version} (source: ${source})`);
         }
-    }).catch(() => {});
+    }).catch((err) => {
+        // Last resort: stderr so version detection issues are at least visible somewhere
+        if (source === 'fallback') {
+            process.stderr.write(`[version-detector] X-Client-Version: fallback ${version} (logger unavailable: ${err.message})\n`);
+        }
+    });
 }
 
 /**
@@ -123,10 +177,13 @@ function logVersionInfo(version, source) {
  * @returns {string} Version string (e.g. "1.110.0")
  */
 export function getClientVersion() {
-    if (cachedClientVersion) return cachedClientVersion;
+    if (cachedClientVersion && !isCacheExpired(cachedClientVersionAt)) {
+        return cachedClientVersion;
+    }
 
     if (process.env.ANTIGRAVITY_CLIENT_VERSION) {
         cachedClientVersion = process.env.ANTIGRAVITY_CLIENT_VERSION;
+        cachedClientVersionAt = Date.now();
         logVersionInfo(cachedClientVersion, 'env');
         return cachedClientVersion;
     }
@@ -134,11 +191,13 @@ export function getClientVersion() {
     const product = getProductJson();
     if (product?.version) {
         cachedClientVersion = product.version;
+        cachedClientVersionAt = Date.now();
         logVersionInfo(cachedClientVersion, 'product.json');
         return cachedClientVersion;
     }
 
     cachedClientVersion = FALLBACK_CLIENT_VERSION;
+    cachedClientVersionAt = Date.now();
     logVersionInfo(cachedClientVersion, 'fallback');
     return cachedClientVersion;
 }
@@ -154,11 +213,13 @@ function getUserAgentVersionConfig() {
     }
 
     const product = getProductJson();
-    if (product?.ideVersion && isVersionHigher(product.ideVersion, FALLBACK_USER_AGENT_VERSION)) {
+    // Use >= comparison: product.json version equal to fallback should still be preferred
+    // over OS detection, since product.json is the most authoritative source
+    if (product?.ideVersion && isVersionHigherOrEqual(product.ideVersion, FALLBACK_USER_AGENT_VERSION)) {
         return { version: product.ideVersion, source: 'product.json' };
     }
 
-    // OS-specific detection (legacy — reads app binary metadata directly)
+    // OS-specific detection (reads app binary metadata directly)
     const os = platform();
     let detectedVersion = null;
     try {
@@ -166,6 +227,8 @@ function getUserAgentVersionConfig() {
             detectedVersion = getVersionMacos();
         } else if (os === 'win32') {
             detectedVersion = getVersionWindows();
+        } else {
+            detectedVersion = getVersionLinux();
         }
     } catch (error) {
         // Silently fail and use fallback
@@ -184,7 +247,9 @@ function getUserAgentVersionConfig() {
  * @returns {string} The User-Agent string
  */
 export function generateSmartUserAgent() {
-    if (cachedUserAgent) return cachedUserAgent;
+    if (cachedUserAgent && !isCacheExpired(cachedUserAgentAt)) {
+        return cachedUserAgent;
+    }
 
     const { version } = getUserAgentVersionConfig();
     const os = platform();
@@ -193,25 +258,50 @@ export function generateSmartUserAgent() {
     const osName = os === 'darwin' ? 'darwin' : (os === 'win32' ? 'win32' : 'linux');
 
     cachedUserAgent = `antigravity/${version} ${osName}/${architecture}`;
+    cachedUserAgentAt = Date.now();
     return cachedUserAgent;
 }
 
 /**
- * MacOS-specific version detection using plutil
+ * Clear all cached version data. Useful for testing and when the
+ * Antigravity installation is updated while the proxy is running.
+ */
+export function clearVersionCache() {
+    cachedUserAgent = null;
+    cachedUserAgentAt = 0;
+    cachedClientVersion = null;
+    cachedClientVersionAt = 0;
+    cachedProductJson = undefined;
+    cachedProductJsonAt = 0;
+    loggedVersionInfo = false;
+}
+
+/**
+ * MacOS-specific version detection using plutil.
+ * Checks both /Applications and ~/Applications.
  */
 function getVersionMacos() {
-    const appPath = '/Applications/Antigravity.app';
-    const plistPath = join(appPath, 'Contents/Info.plist');
+    const appPaths = [
+        '/Applications/Antigravity.app',
+        join(homedir(), 'Applications', 'Antigravity.app')
+    ];
 
-    if (!existsSync(plistPath)) return null;
+    for (const appPath of appPaths) {
+        const plistPath = join(appPath, 'Contents/Info.plist');
 
-    try {
-        const version = execSync(`plutil -extract CFBundleShortVersionString raw "${plistPath}"`, { encoding: 'utf8' }).trim();
-        if (/^\d+\.\d+\.\d+/.test(version)) {
-            return version;
+        if (!existsSync(plistPath)) continue;
+
+        try {
+            const version = execSync(`plutil -extract CFBundleShortVersionString raw "${plistPath}"`, {
+                encoding: 'utf8',
+                timeout: 5000 // 5s timeout to prevent hanging
+            }).trim();
+            if (/^\d+\.\d+\.\d+/.test(version)) {
+                return version;
+            }
+        } catch (e) {
+            // plutil failed or file not found, try next path
         }
-    } catch (e) {
-        // plutil failed or file not found
     }
     return null;
 }
@@ -232,13 +322,63 @@ function getVersionWindows() {
         for (const exePath of possiblePaths) {
             if (existsSync(exePath)) {
                 const cmd = `powershell -Command "(Get-Item '${exePath}').VersionInfo.FileVersion"`;
-                const version = execSync(cmd, { encoding: 'utf8' }).trim();
+                const version = execSync(cmd, {
+                    encoding: 'utf8',
+                    timeout: 10000 // 10s timeout for PowerShell startup
+                }).trim();
                 const match = version.match(/^(\d+\.\d+\.\d+)/);
                 if (match) return match[1];
             }
         }
     } catch (e) {
         // PowerShell or path issues
+    }
+    return null;
+}
+
+/**
+ * Linux-specific version detection using package managers.
+ * Tries dpkg (Debian/Ubuntu), rpm (Fedora/RHEL), and snap in order.
+ */
+function getVersionLinux() {
+    const detectors = [
+        // dpkg (Debian/Ubuntu .deb packages)
+        {
+            cmd: 'dpkg-query -W -f="${Version}" antigravity 2>/dev/null',
+            parse: (output) => {
+                const match = output.trim().match(/^(\d+\.\d+\.\d+)/);
+                return match ? match[1] : null;
+            }
+        },
+        // rpm (Fedora/RHEL/openSUSE)
+        {
+            cmd: 'rpm -q --queryformat "%{VERSION}" antigravity 2>/dev/null',
+            parse: (output) => {
+                const match = output.trim().match(/^(\d+\.\d+\.\d+)/);
+                return match ? match[1] : null;
+            }
+        },
+        // snap
+        {
+            cmd: 'snap info antigravity 2>/dev/null | grep "installed:"',
+            parse: (output) => {
+                const match = output.match(/installed:\s+(\d+\.\d+\.\d+)/);
+                return match ? match[1] : null;
+            }
+        }
+    ];
+
+    for (const { cmd, parse } of detectors) {
+        try {
+            const output = execSync(cmd, {
+                encoding: 'utf8',
+                timeout: 5000 // 5s timeout
+            });
+            const version = parse(output);
+            if (version) return version;
+        } catch (e) {
+            // Package manager not installed or package not found, try next
+        }
     }
     return null;
 }
