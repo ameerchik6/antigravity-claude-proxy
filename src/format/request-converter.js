@@ -25,6 +25,20 @@ import {
 import { logger } from '../utils/logger.js';
 
 /**
+ * Clean system instruction text from Claude Code artifacts.
+ * Claude Code (v2.1.274+) injects billing headers into system prompt blocks:
+ * e.g. "x-anthropic-billing-header: cc_version=2.1.274.834; cc_entrypoint=sdk-cli;"
+ * Cloud Code API rejects requests containing this with 429 RESOURCE_EXHAUSTED.
+ */
+function cleanSystemInstructionText(text) {
+    if (typeof text !== 'string') return text;
+    return text
+        .replace(/^x-anthropic-billing-header:[^\n]*\n?/gim, '')
+        .replace(/^x-anthropic-[a-z0-9_-]+:[^\n]*\n?/gim, '')
+        .trim();
+}
+
+/**
  * Convert Anthropic Messages API request to the format expected by Cloud Code
  *
  * Uses Google Generative AI format, but for Claude models:
@@ -56,13 +70,17 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     if (system) {
         let systemParts = [];
         if (typeof system === 'string') {
-            systemParts = [{ text: system }];
+            const cleaned = cleanSystemInstructionText(system);
+            if (cleaned) {
+                systemParts = [{ text: cleaned }];
+            }
         } else if (Array.isArray(system)) {
             // Filter for text blocks as system prompts are usually text
             // Anthropic supports text blocks in system prompts
             systemParts = system
                 .filter(block => block.type === 'text')
-                .map(block => ({ text: block.text }));
+                .map(block => ({ text: cleanSystemInstructionText(block.text) }))
+                .filter(block => block.text && block.text.length > 0);
         }
 
         if (systemParts.length > 0) {
