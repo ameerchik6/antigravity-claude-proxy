@@ -226,6 +226,62 @@ export function convertOpenAIToAnthropic(openAIRequest) {
 }
 
 /**
+ * Update and preserve raw Anthropic usage across partial stream updates.
+ * Only updates fields that are explicitly defined and non-null in the update object.
+ *
+ * @param {Object|null} current - Existing raw Anthropic usage object
+ * @param {Object|null} update - New partial or complete Anthropic usage object
+ * @returns {Object|null} Updated raw Anthropic usage object
+ */
+export function updateAnthropicUsage(current, update) {
+    if (!update || typeof update !== 'object') {
+        return current ? { ...current } : null;
+    }
+
+    const result = {
+        input_tokens: current?.input_tokens ?? 0,
+        output_tokens: current?.output_tokens ?? 0,
+        cache_read_input_tokens: current?.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: current?.cache_creation_input_tokens ?? 0
+    };
+
+    for (const field of Object.keys(result)) {
+        if (update[field] !== undefined && update[field] !== null) {
+            const value = Number(update[field]);
+            result[field] = Number.isFinite(value) && value >= 0 ? value : 0;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * OpenAI prompt totals include all three Anthropic input categories; only
+ * cache reads count as cached_tokens, not tokens used to create the cache.
+ *
+ * @param {Object|null} anthropicUsage - Anthropic usage object
+ * @returns {Object} OpenAI format usage object
+ */
+export function mapAnthropicUsageToOpenAI(anthropicUsage) {
+    const {
+        input_tokens = 0,
+        output_tokens = 0,
+        cache_read_input_tokens = 0,
+        cache_creation_input_tokens = 0
+    } = updateAnthropicUsage(null, anthropicUsage) || {};
+    const promptTokens = input_tokens + cache_read_input_tokens + cache_creation_input_tokens;
+
+    return {
+        prompt_tokens: promptTokens,
+        completion_tokens: output_tokens,
+        total_tokens: promptTokens + output_tokens,
+        prompt_tokens_details: {
+            cached_tokens: cache_read_input_tokens
+        }
+    };
+}
+
+/**
  * Convert Anthropic Messages non-streaming response to OpenAI ChatCompletion format
  *
  * @param {Object} anthropicResponse - Anthropic API response object
@@ -266,9 +322,6 @@ export function convertAnthropicToOpenAI(anthropicResponse, requestedModel) {
 
     const finishReason = mapAnthropicStopReasonToOpenAI(anthropicResponse.stop_reason);
 
-    const inputTokens = anthropicResponse.usage?.input_tokens || 0;
-    const outputTokens = anthropicResponse.usage?.output_tokens || 0;
-
     return {
         id,
         object: 'chat.completion',
@@ -281,11 +334,7 @@ export function convertAnthropicToOpenAI(anthropicResponse, requestedModel) {
                 finish_reason: finishReason
             }
         ],
-        usage: {
-            prompt_tokens: inputTokens,
-            completion_tokens: outputTokens,
-            total_tokens: inputTokens + outputTokens
-        }
+        usage: mapAnthropicUsageToOpenAI(anthropicResponse.usage)
     };
 }
 
@@ -303,7 +352,7 @@ export async function* streamAnthropicToOpenAI(anthropicStream, requestedModel, 
 
     let toolCallIndex = -1;
     let finishReason = null;
-    let usage = null;
+    let rawUsage = null;
     let sentRole = false;
 
     for await (const event of anthropicStream) {
@@ -328,12 +377,9 @@ export async function* streamAnthropicToOpenAI(anthropicStream, requestedModel, 
             };
             yield `data: ${JSON.stringify(chunk)}\n\n`;
 
-            if (event.message?.usage) {
-                usage = {
-                    prompt_tokens: event.message.usage.input_tokens || 0,
-                    completion_tokens: 0,
-                    total_tokens: event.message.usage.input_tokens || 0
-                };
+            const startUsage = event.message?.usage || event.usage;
+            if (startUsage) {
+                rawUsage = updateAnthropicUsage(rawUsage, startUsage);
             }
         } else if (event.type === 'content_block_start') {
             if (event.content_block?.type === 'tool_use') {
@@ -431,14 +477,10 @@ export async function* streamAnthropicToOpenAI(anthropicStream, requestedModel, 
                 finishReason = mapAnthropicStopReasonToOpenAI(event.delta.stop_reason);
             }
             if (event.usage) {
-                const output = event.usage.output_tokens || 0;
-                const prompt = usage?.prompt_tokens || 0;
-                usage = {
-                    prompt_tokens: prompt,
-                    completion_tokens: output,
-                    total_tokens: prompt + output
-                };
+                rawUsage = updateAnthropicUsage(rawUsage, event.usage);
             }
+        } else if (event.usage) {
+            rawUsage = updateAnthropicUsage(rawUsage, event.usage);
         }
     }
 
@@ -457,8 +499,8 @@ export async function* streamAnthropicToOpenAI(anthropicStream, requestedModel, 
         ]
     };
 
-    if (usage) {
-        finalChunk.usage = usage;
+    if (rawUsage) {
+        finalChunk.usage = mapAnthropicUsageToOpenAI(rawUsage);
     }
 
     yield `data: ${JSON.stringify(finalChunk)}\n\n`;
@@ -469,5 +511,7 @@ export default {
     mapAnthropicStopReasonToOpenAI,
     convertOpenAIToAnthropic,
     convertAnthropicToOpenAI,
-    streamAnthropicToOpenAI
+    streamAnthropicToOpenAI,
+    mapAnthropicUsageToOpenAI,
+    updateAnthropicUsage
 };

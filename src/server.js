@@ -712,8 +712,7 @@ app.post('/refresh-token', async (req, res) => {
 const handleListModels = async (req, res) => {
     try {
         await ensureInitialized();
-        const { account } = accountManager.selectAccount();
-        if (!account) {
+        if (!accountManager.getAllAccounts().some(account => account.enabled !== false && !account.isInvalid)) {
             return res.status(503).json({
                 error: {
                     type: 'api_error',
@@ -721,8 +720,7 @@ const handleListModels = async (req, res) => {
                 }
             });
         }
-        const token = await accountManager.getTokenForAccount(account);
-        const models = await listModels(token);
+        const models = await listModels(accountManager);
         res.json(models);
     } catch (error) {
         logger.error('[API] Error listing models:', error);
@@ -745,8 +743,7 @@ const handleGetModel = async (req, res) => {
     try {
         await ensureInitialized();
         const modelId = req.params.model;
-        const { account } = accountManager.selectAccount();
-        if (!account) {
+        if (!accountManager.getAllAccounts().some(account => account.enabled !== false && !account.isInvalid)) {
             return res.status(503).json({
                 error: {
                     type: 'api_error',
@@ -754,8 +751,7 @@ const handleGetModel = async (req, res) => {
                 }
             });
         }
-        const token = await accountManager.getTokenForAccount(account);
-        const models = await listModels(token);
+        const models = await listModels(accountManager);
         const modelData = models.data?.find(m => m.id === modelId);
 
         if (!modelData) {
@@ -821,22 +817,16 @@ const handleChatCompletions = async (req, res) => {
         const modelId = requestedModel;
 
         // Validate model ID before processing (same as /v1/messages)
-        const { account: validationAccount } = accountManager.selectAccount();
-        if (validationAccount) {
-            const token = await accountManager.getTokenForAccount(validationAccount);
-            const projectId = validationAccount.subscription?.projectId || null;
-            const valid = await isValidModel(modelId, token, projectId);
-
-            if (!valid) {
-                return res.status(400).json({
-                    error: {
-                        message: `The model '${modelId}' does not exist. Use /v1/models to see available models.`,
-                        type: 'invalid_request_error',
-                        param: 'model',
-                        code: 'model_not_found'
-                    }
-                });
-            }
+        const valid = await isValidModel(modelId, accountManager);
+        if (!valid) {
+            return res.status(400).json({
+                error: {
+                    message: `The model '${modelId}' does not exist. Use /v1/models to see available models.`,
+                    type: 'invalid_request_error',
+                    param: 'model',
+                    code: 'model_not_found'
+                }
+            });
         }
 
         // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them
@@ -1023,15 +1013,8 @@ app.post('/v1/messages', async (req, res) => {
         const modelId = requestedModel;
 
         // Validate model ID before processing
-        const { account: validationAccount } = accountManager.selectAccount();
-        if (validationAccount) {
-            const token = await accountManager.getTokenForAccount(validationAccount);
-            const projectId = validationAccount.subscription?.projectId || null;
-            const valid = await isValidModel(modelId, token, projectId);
-
-            if (!valid) {
-                throw new Error(`invalid_request_error: Invalid model: ${modelId}. Use /v1/models to see available models.`);
-            }
+        if (!await isValidModel(modelId, accountManager)) {
+            throw new Error(`invalid_request_error: Invalid model: ${modelId}. Use /v1/models to see available models.`);
         }
 
         // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them to force a fresh check.

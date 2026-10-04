@@ -14,7 +14,9 @@ async function runTests() {
         convertOpenAIToAnthropic,
         convertAnthropicToOpenAI,
         streamAnthropicToOpenAI,
-        mapAnthropicStopReasonToOpenAI
+        mapAnthropicStopReasonToOpenAI,
+        mapAnthropicUsageToOpenAI,
+        updateAnthropicUsage
     } = await import('../src/format/openai-converter.js');
 
     let passed = 0;
@@ -234,6 +236,7 @@ async function runTests() {
         assertEqual(result.usage.prompt_tokens, 15);
         assertEqual(result.usage.completion_tokens, 25);
         assertEqual(result.usage.total_tokens, 40);
+        assertEqual(result.usage.prompt_tokens_details, { cached_tokens: 0 });
     });
 
     test('Converts Anthropic response with tool_use to OpenAI tool_calls', () => {
@@ -344,6 +347,335 @@ async function runTests() {
         assertEqual(finalChunk.usage.prompt_tokens, 12);
         assertEqual(finalChunk.usage.completion_tokens, 4);
         assertEqual(finalChunk.usage.total_tokens, 16);
+        assertEqual(finalChunk.usage.prompt_tokens_details, { cached_tokens: 0 });
+    });
+
+    // 5. Cached Tokens & Usage Mapping Regression Tests
+    test('mapAnthropicUsageToOpenAI correctly maps full usage with caching and cache creation', () => {
+        const anthropicUsage = {
+            input_tokens: 20,
+            cache_read_input_tokens: 80,
+            cache_creation_input_tokens: 10,
+            output_tokens: 30
+        };
+
+        const result = mapAnthropicUsageToOpenAI(anthropicUsage);
+        assertEqual(result, {
+            prompt_tokens: 110,
+            completion_tokens: 30,
+            total_tokens: 140,
+            prompt_tokens_details: {
+                cached_tokens: 80
+            }
+        });
+    });
+
+    test('mapAnthropicUsageToOpenAI emits cached_tokens: 0 when no cache read tokens present', () => {
+        const anthropicUsage = {
+            input_tokens: 50,
+            output_tokens: 20
+        };
+
+        const result = mapAnthropicUsageToOpenAI(anthropicUsage);
+        assertEqual(result, {
+            prompt_tokens: 50,
+            completion_tokens: 20,
+            total_tokens: 70,
+            prompt_tokens_details: {
+                cached_tokens: 0
+            }
+        });
+    });
+
+    test('mapAnthropicUsageToOpenAI safely handles null or undefined usage', () => {
+        const expected = {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            prompt_tokens_details: {
+                cached_tokens: 0
+            }
+        };
+
+        assertEqual(mapAnthropicUsageToOpenAI(null), expected);
+        assertEqual(mapAnthropicUsageToOpenAI(undefined), expected);
+        assertEqual(mapAnthropicUsageToOpenAI({}), expected);
+    });
+
+    test('updateAnthropicUsage handles nullish updates, preserves fields, and allows explicit 0 reset', () => {
+        // Initial state from first event
+        let state = updateAnthropicUsage(null, { input_tokens: 100, cache_read_input_tokens: 50 });
+        assertEqual(state, {
+            input_tokens: 100,
+            output_tokens: 0,
+            cache_read_input_tokens: 50,
+            cache_creation_input_tokens: 0
+        });
+
+        // Partial output-only delta preserves input and cache fields
+        state = updateAnthropicUsage(state, { output_tokens: 25 });
+        assertEqual(state, {
+            input_tokens: 100,
+            output_tokens: 25,
+            cache_read_input_tokens: 50,
+            cache_creation_input_tokens: 0
+        });
+
+        // Explicit 0 reset on cached tokens
+        state = updateAnthropicUsage(state, { cache_read_input_tokens: 0 });
+        assertEqual(state, {
+            input_tokens: 100,
+            output_tokens: 25,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0
+        });
+
+        // Null / undefined update preserves state
+        const preserved = updateAnthropicUsage(state, null);
+        assertEqual(preserved, state);
+
+        const preserved2 = updateAnthropicUsage(state, { input_tokens: undefined });
+        assertEqual(preserved2, state);
+    });
+
+    test('convertAnthropicToOpenAI includes cached_tokens in prompt_tokens_details', () => {
+        const anthropicRes = {
+            id: 'msg_cache_test',
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Response with cache.' }],
+            model: 'gemini-3.8-flash-tiered',
+            stop_reason: 'end_turn',
+            usage: {
+                input_tokens: 45,
+                cache_read_input_tokens: 120,
+                cache_creation_input_tokens: 15,
+                output_tokens: 60
+            }
+        };
+
+        const result = convertAnthropicToOpenAI(anthropicRes, 'gemini-3.8-flash-tiered');
+        assertEqual(result.usage, {
+            prompt_tokens: 180, // 45 + 120 + 15
+            completion_tokens: 60,
+            total_tokens: 240,
+            prompt_tokens_details: {
+                cached_tokens: 120
+            }
+        });
+    });
+
+    test('convertAnthropicToOpenAI handles response without usage gracefully', () => {
+        const anthropicRes = {
+            id: 'msg_no_usage',
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'text', text: 'No usage.' }],
+            model: 'gemini-3.8-flash-tiered',
+            stop_reason: 'end_turn'
+        };
+
+        const result = convertAnthropicToOpenAI(anthropicRes, 'gemini-3.8-flash-tiered');
+        assertEqual(result.usage, {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            prompt_tokens_details: {
+                cached_tokens: 0
+            }
+        });
+    });
+
+    await testAsync('streamAnthropicToOpenAI preserves cached tokens across output-only message_delta', async () => {
+        async function* mockStream() {
+            yield {
+                type: 'message_start',
+                message: {
+                    id: 'msg_cached_stream',
+                    model: 'gemini-3.8-flash-tiered',
+                    usage: {
+                        input_tokens: 30,
+                        cache_read_input_tokens: 70,
+                        cache_creation_input_tokens: 5
+                    }
+                }
+            };
+            yield {
+                type: 'content_block_start',
+                index: 0,
+                content_block: { type: 'text', text: '' }
+            };
+            yield {
+                type: 'content_block_delta',
+                index: 0,
+                delta: { type: 'text_delta', text: 'Cached chunk' }
+            };
+            yield {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn' },
+                usage: { output_tokens: 25 }
+            };
+            yield { type: 'message_stop' };
+        }
+
+        const chunks = [];
+        for await (const chunk of streamAnthropicToOpenAI(mockStream(), 'gemini-3.8-flash-tiered', 'chatcmpl-stream-cache')) {
+            chunks.push(chunk);
+        }
+
+        const finalChunk = JSON.parse(chunks[chunks.length - 2].replace(/^data: /, '').trim());
+        assertEqual(finalChunk.choices[0].finish_reason, 'stop');
+        assertEqual(finalChunk.usage, {
+            prompt_tokens: 105, // 30 + 70 + 5
+            completion_tokens: 25,
+            total_tokens: 130,
+            prompt_tokens_details: {
+                cached_tokens: 70
+            }
+        });
+    });
+
+    await testAsync('streamAnthropicToOpenAI applies authoritative message_delta usage update', async () => {
+        async function* mockStream() {
+            yield {
+                type: 'message_start',
+                message: {
+                    id: 'msg_authoritative',
+                    model: 'gemini-3.8-flash-tiered',
+                    usage: { input_tokens: 100 }
+                }
+            };
+            yield {
+                type: 'content_block_delta',
+                index: 0,
+                delta: { type: 'text_delta', text: 'Authoritative' }
+            };
+            yield {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn' },
+                usage: {
+                    input_tokens: 20,
+                    cache_read_input_tokens: 80,
+                    output_tokens: 15
+                }
+            };
+        }
+
+        const chunks = [];
+        for await (const chunk of streamAnthropicToOpenAI(mockStream(), 'gemini-3.8-flash-tiered', 'chatcmpl-authoritative')) {
+            chunks.push(chunk);
+        }
+
+        const finalChunk = JSON.parse(chunks[chunks.length - 2].replace(/^data: /, '').trim());
+        assertEqual(finalChunk.usage, {
+            prompt_tokens: 100, // 20 + 80
+            completion_tokens: 15,
+            total_tokens: 115,
+            prompt_tokens_details: {
+                cached_tokens: 80
+            }
+        });
+    });
+
+    await testAsync('streamAnthropicToOpenAI handles explicit 0 cache reset in message_delta', async () => {
+        async function* mockStream() {
+            yield {
+                type: 'message_start',
+                message: {
+                    id: 'msg_reset_zero',
+                    model: 'gemini-3.8-flash-tiered',
+                    usage: {
+                        input_tokens: 50,
+                        cache_read_input_tokens: 25
+                    }
+                }
+            };
+            yield {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn' },
+                usage: {
+                    cache_read_input_tokens: 0,
+                    output_tokens: 10
+                }
+            };
+        }
+
+        const chunks = [];
+        for await (const chunk of streamAnthropicToOpenAI(mockStream(), 'gemini-3.8-flash-tiered', 'chatcmpl-reset-zero')) {
+            chunks.push(chunk);
+        }
+
+        const finalChunk = JSON.parse(chunks[chunks.length - 2].replace(/^data: /, '').trim());
+        assertEqual(finalChunk.usage, {
+            prompt_tokens: 50, // 50 + 0
+            completion_tokens: 10,
+            total_tokens: 60,
+            prompt_tokens_details: {
+                cached_tokens: 0
+            }
+        });
+    });
+
+    await testAsync('streamAnthropicToOpenAI preserves input tokens on cache-only partial delta without incorrect subtraction', async () => {
+        async function* mockStream() {
+            yield {
+                type: 'message_start',
+                message: {
+                    id: 'msg_partial_cache',
+                    model: 'gemini-3.8-flash-tiered',
+                    usage: { input_tokens: 40 }
+                }
+            };
+            // Intermediate cache-only delta
+            yield {
+                type: 'custom_event',
+                usage: { cache_read_input_tokens: 10 }
+            };
+            yield {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn' },
+                usage: { output_tokens: 8 }
+            };
+        }
+
+        const chunks = [];
+        for await (const chunk of streamAnthropicToOpenAI(mockStream(), 'gemini-3.8-flash-tiered', 'chatcmpl-partial-cache')) {
+            chunks.push(chunk);
+        }
+
+        const finalChunk = JSON.parse(chunks[chunks.length - 2].replace(/^data: /, '').trim());
+        assertEqual(finalChunk.usage, {
+            prompt_tokens: 50, // 40 + 10
+            completion_tokens: 8,
+            total_tokens: 58,
+            prompt_tokens_details: {
+                cached_tokens: 10
+            }
+        });
+    });
+
+    await testAsync('streamAnthropicToOpenAI yields no usage in final chunk if stream has no usage events', async () => {
+        async function* mockStream() {
+            yield {
+                type: 'message_start',
+                message: {
+                    id: 'msg_no_usage',
+                    model: 'gemini-3.8-flash-tiered'
+                }
+            };
+            yield {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn' }
+            };
+        }
+
+        const chunks = [];
+        for await (const chunk of streamAnthropicToOpenAI(mockStream(), 'gemini-3.8-flash-tiered', 'chatcmpl-no-usage')) {
+            chunks.push(chunk);
+        }
+
+        const finalChunk = JSON.parse(chunks[chunks.length - 2].replace(/^data: /, '').trim());
+        assertTrue(finalChunk.usage === undefined, 'Usage should be omitted when not provided by upstream');
     });
 
     console.log('\n' + '='.repeat(60));
