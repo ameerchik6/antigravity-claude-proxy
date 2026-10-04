@@ -96,6 +96,8 @@ antigravity-claude-proxy accounts
 
 With multiple accounts, the proxy automatically switches to the next available account. With a single account, you'll need to wait for the rate limit to reset.
 
+> **Claude Code "False Quota Exhaustion"**: If Claude Code reports `400 RESOURCE_EXHAUSTED` across all accounts despite available quota, this is caused by Anthropic internal billing headers (`x-anthropic-billing-header`) or third-party identity strings triggering Google Cloud Code's content filters. The proxy automatically sanitizes these. See [Claude Code Compatibility](claude-code-compatibility.md) and Issue [#375](https://github.com/badrisnarayanan/antigravity-claude-proxy/issues/375) for full details.
+
 ## Account Shows as "Invalid"
 
 Re-authenticate the account:

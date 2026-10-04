@@ -254,6 +254,8 @@ claude
 ```
 
 > **Note:** If Claude Code asks you to select a login method, add `"hasCompletedOnboarding": true` to `~/.claude.json` (macOS/Linux) or `%USERPROFILE%\.claude.json` (Windows), then restart your terminal and try again.
+>
+> **Claude Code v2.1.274+ Compatibility**: The proxy automatically strips Anthropic billing headers (`x-anthropic-billing-header`) and neutralizes proprietary identity strings from system prompts, preventing false `429 RESOURCE_EXHAUSTED` errors. See [Claude Code Compatibility](docs/claude-code-compatibility.md) and Issue [#375](https://github.com/badrisnarayanan/antigravity-claude-proxy/issues/375).
 
 ### Proxy Mode vs. Paid Mode
 
@@ -324,6 +326,7 @@ service.cmd uninstall   :: Stop and remove the scheduled task and terminate proc
 ## Documentation
 
 - [Available Models](docs/models.md)
+- [Claude Code Compatibility & Fixes](docs/claude-code-compatibility.md)
 - [Multi-Account Load Balancing](docs/load-balancing.md)
 - [Web Management Console](docs/web-console.md)
 - [Advanced Configuration](docs/configuration.md)
