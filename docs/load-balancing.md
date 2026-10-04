@@ -11,13 +11,15 @@ Choose a strategy based on your needs:
 | **Hybrid** (Default) | Most users | Smart selection combining health score, token bucket rate limiting, quota awareness, and LRU freshness |
 | **Sticky** | Prompt caching | Stays on the same account to maximize cache hits, switches only when rate-limited |
 | **Round-Robin** | Even distribution | Cycles through accounts sequentially for balanced load |
+| **Agentic** | Long-horizon tasks | Prioritizes accounts with sustained streaks of consecutive successes |
 
 **Configure via CLI:**
 
 ```bash
-antigravity-claude-proxy start --strategy=hybrid    # Default: smart distribution
-antigravity-claude-proxy start --strategy=sticky    # Cache-optimized
+antigravity-claude-proxy start --strategy=hybrid       # Default: smart distribution
+antigravity-claude-proxy start --strategy=sticky       # Cache-optimized
 antigravity-claude-proxy start --strategy=round-robin  # Load-balanced
+antigravity-claude-proxy start --strategy=agentic      # Success-streak optimized
 ```
 
 **Or via WebUI:** Settings → Server → Account Selection Strategy

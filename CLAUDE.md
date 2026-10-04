@@ -14,6 +14,7 @@ npm run dev:full     # watch CSS + server files
 
 npm start -- --strategy=sticky       # cache-optimized (default is hybrid)
 npm start -- --strategy=round-robin  # load-balanced
+npm start -- --strategy=agentic      # success-streak optimized (consecutive success affinity)
 npm start -- --fallback              # fall back to alternate model on quota exhaustion
 npm start -- --dev-mode              # enables debug logging + dev tools (--debug is a legacy alias)
 
@@ -60,3 +61,11 @@ service.cmd uninstall                # remove Windows service
 **`agy` CLI token reuse (`source: 'agy'`)**: The standalone Antigravity CLI (`agy`) stores its Google OAuth token at `~/.gemini/antigravity-cli/antigravity-oauth-token`. `agy` uses the same OAuth client_id/secret as this proxy, so its refresh_token can be refreshed directly. Import with `npm run accounts:import-agy`. No full Antigravity IDE install required. The proxy reads the token file on each request (with caching), and optionally writes back refreshed access tokens when `AGY_TOKEN_WRITEBACK=1`.
 
 **`--no-webui` flag**: Disables the WebUI (static files + account management API routes) for headless servers where only the Anthropic-compatible `/v1/*` API is needed. Saves ~30-50MB RAM. Can also be set via `DISABLE_WEBUI=1` or `NO_WEBUI=1` env vars.
+
+**OpenAI & Third-Party Endpoints**: Supports OpenAI-compatible clients via `/v1/chat/completions` and `/v1/models` (streaming and tool calls supported), plus `/anthropic/v1/*` URL prefix rewriting to `/v1/*` for tools like Hermes Agent.
+
+**Local Model Routing**: Requests targeting models matching `nanbeige*` or `local-*` are automatically forwarded to a local `llama-server` on `LOCAL_MODEL_PORT` (default `10000`), bypassing Cloud Code.
+
+**Persistent Signature Cache & Cache Continuity**: Thinking signatures persist to `~/.config/antigravity-proxy/signature-store.json` (override with `ANTIGRAVITY_SIGNATURE_STORE`) without expiry across restarts. Session IDs are derived per-conversation (`sha256(accountEmail, first user text)`) to prevent cross-conversation cache eviction.
+
+**Dynamic Custom Model IDs**: Models can be added or deleted dynamically via the WebUI Models tab or `/api/models` (stored in `config.json` under `customModels`), with autocomplete in the Model Mapping settings.

@@ -135,6 +135,16 @@ antigravity-claude-proxy accounts add --no-browser
 
 If you have the **Antigravity** app installed and logged in, the proxy will automatically detect your local session. No additional setup is required.
 
+#### **Method D: Antigravity CLI Token Import (`agy`)**
+
+If you use the standalone Antigravity CLI (`agy`), you can directly reuse its OAuth token without any browser interaction:
+
+```bash
+npm run accounts:import-agy
+# Or specify a custom path:
+AGY_TOKEN_PATH=/path/to/antigravity-oauth-token npm run accounts:import-agy
+```
+
 To use a custom port:
 
 ```bash
@@ -320,6 +330,31 @@ service.cmd install     :: Register and start the background task
 service.cmd status      :: Check task state, Node.js process, and port listening status
 service.cmd uninstall   :: Stop and remove the scheduled task and terminate processes
 ```
+
+### Using with OpenAI-Compatible Tools & Clients
+
+The proxy exposes full OpenAI-compatible API endpoints (`/v1/chat/completions` and `/v1/models`), allowing integration with OpenAI SDKs, IDE extensions (Cursor, Continue, Cline), terminal tools (Aider, OpenCode), and frontends (LibreChat, LiteLLM):
+
+- **Base URL:** `http://localhost:8080/v1` (or `http://localhost:8080/` depending on client)
+- **API Key:** Any arbitrary string (e.g. `test` or `sk-antigravity`)
+- **Models:** Any supported model (`claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gemini-3.8-flash-tiered`, etc.)
+- **Streaming & Tools:** Supports standard OpenAI Server-Sent Events (SSE) streaming and function calling.
+
+For tools that auto-detect Anthropic endpoints via the `/anthropic` URL suffix (e.g., Hermes Agent), the proxy provides a transparent alias: requests to `http://localhost:8080/anthropic/v1/*` are automatically routed to `/v1/*`.
+
+### Headless Mode & Memory Optimization
+
+On minimal VPS setups or containerized environments, disable the web management console to save ~30–50MB of RAM:
+
+```bash
+npm start -- --no-webui
+# Or via environment variable:
+DISABLE_WEBUI=1 npm start
+```
+
+### Local Model Routing
+
+If you run local models via `llama-server` (e.g., `nanbeige4.1-3b` or `local-*`), the proxy can automatically route requests to `http://127.0.0.1:10000/v1/messages` (configurable via `LOCAL_MODEL_PORT`), bypassing Cloud Code while using the same Anthropic proxy port.
 
 ---
 
