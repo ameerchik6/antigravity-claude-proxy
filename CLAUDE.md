@@ -28,6 +28,10 @@ npm run accounts:verify
 npm test                             # requires server running on port 8080
 node tests/run-all.cjs <filter>      # run matching tests only
 node tests/test-strategies.cjs       # strategy unit tests (no server needed)
+
+service.cmd install                  # Windows background service (Task Scheduler)
+service.cmd status                   # check Windows service status
+service.cmd uninstall                # remove Windows service
 ```
 
 ## Non-obvious things

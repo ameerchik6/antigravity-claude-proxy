@@ -88,6 +88,9 @@ npx antigravity-claude-proxy@latest start
 
 # If cloned locally
 npm start
+
+# Windows Background Service (Task Scheduler)
+service.cmd install
 ```
 
 The server launches as a **background process** on `http://localhost:8080` by default and survives terminal closure.
@@ -100,6 +103,7 @@ The server launches as a **background process** on `http://localhost:8080` by de
 | `acc status` | Check proxy health and PID |
 | `acc ui` | Open the web dashboard |
 | `acc start --log` | Run in foreground with visible logs |
+| `service.cmd` | Windows Service Manager (interactive menu, install, status, uninstall) |
 
 ### 2. Link Account(s)
 
@@ -300,6 +304,20 @@ ExecStart=/usr/bin/node /path/to/antigravity-claude-proxy/src/index.js
 ```
 
 Without this, the WebUI's Claude CLI tab won't be able to read or write your Claude Code configuration.
+
+### Running as a Windows Background Service
+
+On Windows, you can manage the proxy as a permanent background service using Windows Task Scheduler via `service.cmd`:
+
+```cmd
+:: Interactive menu
+service.cmd
+
+:: Direct commands
+service.cmd install     :: Register and start the background task
+service.cmd status      :: Check task state, Node.js process, and port listening status
+service.cmd uninstall   :: Stop and remove the scheduled task and terminate processes
+```
 
 ---
 
