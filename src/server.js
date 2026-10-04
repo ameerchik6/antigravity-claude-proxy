@@ -1070,7 +1070,6 @@ app.post('/v1/messages', async (req, res) => {
 
         const modelId = requestedModel;
 
-<<<<<<< HEAD
         // ── Local model routing ──────────────────────────────────────────────
         // If the model is a local model (nanbeige* or local-*), bypass the Cloud
         // Code pipeline and proxy directly to llama-server at localhost:10000.
