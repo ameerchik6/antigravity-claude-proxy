@@ -26,6 +26,77 @@ function Show-Header {
 
 function Run-Supervisor {
     Set-Location -LiteralPath $dir
+
+    $csharp = @"
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+public static class SelfJobTracker {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetInformationJobObject(IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct IO_COUNTERS {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryLimit;
+        public UIntPtr PeakJobMemoryLimit;
+    }
+
+    private static IntPtr jobHandle = IntPtr.Zero;
+
+    public static bool Initialize() {
+        jobHandle = CreateJobObject(IntPtr.Zero, null);
+        if (jobHandle == IntPtr.Zero) return false;
+
+        var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        info.BasicLimitInformation.LimitFlags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        IntPtr pInfo = Marshal.AllocHGlobal(length);
+        Marshal.StructureToPtr(info, pInfo, false);
+        bool setOk = SetInformationJobObject(jobHandle, 9, pInfo, (uint)length);
+        Marshal.FreeHGlobal(pInfo);
+        if (!setOk) return false;
+
+        return AssignProcessToJobObject(jobHandle, Process.GetCurrentProcess().Handle);
+    }
+}
+"@
+    Add-Type -TypeDefinition $csharp -ErrorAction SilentlyContinue
+    [SelfJobTracker]::Initialize() | Out-Null
+
     $nodePath = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
     if (-not $nodePath) { $nodePath = "node.exe" }
     $logPath = Join-Path $dir "service.log"
