@@ -100,11 +100,20 @@ public static class SelfJobTracker {
     $nodePath = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
     if (-not $nodePath) { $nodePath = "node.exe" }
     $logPath = Join-Path $dir "service.log"
+    $noWebUiFile = Join-Path $dir ".no-webui"
 
     while ($true) {
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        "[$timestamp] [SERVICE] Starting proxy (node src/index.js)..." | Out-File -FilePath $logPath -Append -Encoding utf8
-        & $nodePath "src/index.js" 2>&1 | Out-File -FilePath $logPath -Append -Encoding utf8
+        $isNoWeb = Test-Path -LiteralPath $noWebUiFile
+        if ($isNoWeb) {
+            $env:DISABLE_WEBUI = "true"
+            "[$timestamp] [SERVICE] Starting proxy (node src/index.js --no-webui)..." | Out-File -FilePath $logPath -Append -Encoding utf8
+            & $nodePath "src/index.js" "--no-webui" 2>&1 | Out-File -FilePath $logPath -Append -Encoding utf8
+        } else {
+            Remove-Item Env:DISABLE_WEBUI -ErrorAction SilentlyContinue
+            "[$timestamp] [SERVICE] Starting proxy (node src/index.js)..." | Out-File -FilePath $logPath -Append -Encoding utf8
+            & $nodePath "src/index.js" 2>&1 | Out-File -FilePath $logPath -Append -Encoding utf8
+        }
         $exitCode = $LASTEXITCODE
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         "[$timestamp] [SERVICE] Process exited with code $exitCode. Restarting in 2s..." | Out-File -FilePath $logPath -Append -Encoding utf8
@@ -187,6 +196,47 @@ function Uninstall-Service {
     Write-Host "Service uninstalled successfully." -ForegroundColor Green
 }
 
+function Get-WebUIDisabled {
+    $noWebUiFile = Join-Path $dir ".no-webui"
+    if (Test-Path -LiteralPath $noWebUiFile) { return $true }
+    $proc = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*src/index.js*' -and $_.CommandLine -like '*--no-webui*' }
+    if ($proc) { return $true }
+    return $false
+}
+
+function Toggle-WebUI {
+    Write-Host ""
+    Write-Host "==================================================" -ForegroundColor Cyan
+    Write-Host "[4/4] WebUI Toggle..." -ForegroundColor Cyan
+    Write-Host "==================================================" -ForegroundColor Cyan
+
+    $noWebUiFile = Join-Path $dir ".no-webui"
+    $isDisabled = Get-WebUIDisabled
+
+    if ($isDisabled) {
+        Write-Host "Enabling WebUI..." -ForegroundColor Cyan
+        if (Test-Path -LiteralPath $noWebUiFile) {
+            Remove-Item -LiteralPath $noWebUiFile -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "WebUI has been ENABLED (Web dashboard will be active)." -ForegroundColor Green
+    } else {
+        Write-Host "Disabling WebUI to save RAM..." -ForegroundColor Cyan
+        Set-Content -LiteralPath $noWebUiFile -Value "true" -Encoding utf8
+        Write-Host "WebUI has been DISABLED (--no-webui mode, saves ~30-50MB RAM)." -ForegroundColor Green
+    }
+
+    # If proxy process is running, restart it so supervisor immediately reloads with new mode
+    $nodeProcs = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*src/index.js*' })
+    if ($nodeProcs.Count -gt 0) {
+        Write-Host "Restarting proxy process to apply changes immediately..." -ForegroundColor Yellow
+        $nodeProcs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
+        Write-Host "Proxy process restarted." -ForegroundColor Green
+    } else {
+        Write-Host "Service is not currently running. Setting will apply on next start." -ForegroundColor Gray
+    }
+}
+
 function Get-ServiceStatus {
     Write-Host ""
     Write-Host "==================================================" -ForegroundColor Cyan
@@ -214,6 +264,14 @@ function Get-ServiceStatus {
         Write-Host "NOT RUNNING" -ForegroundColor Yellow
     }
 
+    $isNoWeb = Get-WebUIDisabled
+    Write-Host "WebUI Mode:          " -NoNewline
+    if ($isNoWeb) {
+        Write-Host "DISABLED (--no-webui, saves ~30-50MB RAM)" -ForegroundColor Magenta
+    } else {
+        Write-Host "ENABLED (Web dashboard active)" -ForegroundColor Green
+    }
+
     $port = 3023
     $cfgPath = Join-Path $dir "config.json"
     if (Test-Path $cfgPath) {
@@ -235,27 +293,37 @@ function Get-ServiceStatus {
 
 if ($Action) {
     switch ($Action.ToLower()) {
-        "run"       { Run-Supervisor; break }
-        "install"   { Install-Service; break }
-        "1"         { Install-Service; break }
-        "uninstall" { Uninstall-Service; break }
-        "2"         { Uninstall-Service; break }
-        "status"    { Get-ServiceStatus; break }
-        "3"         { Get-ServiceStatus; break }
+        "run"          { Run-Supervisor; break }
+        "install"      { Install-Service; break }
+        "1"            { Install-Service; break }
+        "uninstall"    { Uninstall-Service; break }
+        "2"            { Uninstall-Service; break }
+        "status"       { Get-ServiceStatus; break }
+        "3"            { Get-ServiceStatus; break }
+        "toggle-webui" { Toggle-WebUI; break }
+        "no-webui"     { Toggle-WebUI; break }
+        "webui"        { Toggle-WebUI; break }
+        "4"            { Toggle-WebUI; break }
         default {
             Write-Host ("Unknown parameter: " + $Action) -ForegroundColor Red
-            Write-Host "Valid parameters: install, uninstall, status (or 1, 2, 3)" -ForegroundColor Yellow
+            Write-Host "Valid parameters: install, uninstall, status, toggle-webui (or 1, 2, 3, 4)" -ForegroundColor Yellow
             break
         }
     }
 } else {
     do {
+        $isNoWeb = Get-WebUIDisabled
         Clear-Host
         Show-Header
         Write-Host "Select an action:" -ForegroundColor White
         Write-Host "  [1] Install Service" -ForegroundColor Green
         Write-Host "  [2] Uninstall Service" -ForegroundColor Red
         Write-Host "  [3] Service Status" -ForegroundColor Yellow
+        if ($isNoWeb) {
+            Write-Host "  [4] Enable WebUI (Currently: Disabled / No-WebUI)" -ForegroundColor Magenta
+        } else {
+            Write-Host "  [4] Disable WebUI / Save RAM (Currently: Enabled)" -ForegroundColor Cyan
+        }
         Write-Host "  [0] Exit" -ForegroundColor Gray
         Write-Host ""
         $choice = Read-Host "Your choice"
@@ -264,6 +332,7 @@ if ($Action) {
             "1" { Install-Service; Write-Host ""; Read-Host "Press Enter to return to menu..." }
             "2" { Uninstall-Service; Write-Host ""; Read-Host "Press Enter to return to menu..." }
             "3" { Get-ServiceStatus; Write-Host ""; Read-Host "Press Enter to return to menu..." }
+            "4" { Toggle-WebUI; Write-Host ""; Read-Host "Press Enter to return to menu..." }
             "0" { return }
             default { Write-Host "Invalid choice. Please try again." -ForegroundColor Red; Start-Sleep -Seconds 1 }
         }

@@ -17,6 +17,7 @@ log.txt
 # Local config (may contain tokens)
 .claude/
 .deepvcode/
+.no-webui
 
 # Runtime data
 data/
