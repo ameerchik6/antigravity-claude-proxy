@@ -24,6 +24,23 @@ function Show-Header {
     Write-Host ""
 }
 
+function Run-Supervisor {
+    Set-Location -LiteralPath $dir
+    $nodePath = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
+    if (-not $nodePath) { $nodePath = "node.exe" }
+    $logPath = Join-Path $dir "service.log"
+
+    while ($true) {
+        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        "[$timestamp] [SERVICE] Starting proxy (node src/index.js)..." | Out-File -FilePath $logPath -Append -Encoding utf8
+        & $nodePath "src/index.js" 2>&1 | Out-File -FilePath $logPath -Append -Encoding utf8
+        $exitCode = $LASTEXITCODE
+        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        "[$timestamp] [SERVICE] Process exited with code $exitCode. Restarting in 2s..." | Out-File -FilePath $logPath -Append -Encoding utf8
+        Start-Sleep -Seconds 2
+    }
+}
+
 function Install-Service {
     Write-Host ""
     Write-Host "==================================================" -ForegroundColor Cyan
@@ -35,7 +52,8 @@ function Install-Service {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
 
     $procs = @(Get-CimInstance Win32_Process | Where-Object {
-        ($_.Name -eq 'node.exe' -and $_.CommandLine -like '*src/index.js*')
+        ($_.Name -eq 'node.exe' -and $_.CommandLine -like '*src/index.js*') -or
+        ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*service.cmd*run*')
     })
     if ($procs.Count -gt 0) {
         $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -43,9 +61,10 @@ function Install-Service {
     }
 
     Write-Host "Registering task in Windows Task Scheduler..." -ForegroundColor Cyan
-    $nodePath = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
-    if (-not $nodePath) { $nodePath = "node.exe" }
-    $taskAction = New-ScheduledTaskAction -Execute $nodePath -Argument "src/index.js" -WorkingDirectory $dir
+    $serviceCmdPath = Join-Path $dir "service.cmd"
+    $psArgs = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$p=''{0}''; $c=[IO.File]::ReadAllText($p,[Text.Encoding]::UTF8); $m=[char]10+''###POWERSHELL_START###''+[char]13; if(-not $c.Contains($m)){{$m=[char]10+''###POWERSHELL_START###''}}; $code=$c.Substring($c.IndexOf($m)+$m.Length); & ([ScriptBlock]::Create($code)) run"' -f $serviceCmdPath
+
+    $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs -WorkingDirectory $dir
     $triggerStartup = New-ScheduledTaskTrigger -AtStartup
     $triggerLogon = New-ScheduledTaskTrigger -AtLogOn
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Highest
@@ -82,9 +101,10 @@ function Uninstall-Service {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
 
-    Write-Host "Terminating Node.js processes..." -ForegroundColor Yellow
+    Write-Host "Terminating background processes..." -ForegroundColor Yellow
     $procs = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -eq 'node.exe' -and $_.CommandLine -like '*src/index.js*'
+        ($_.Name -eq 'node.exe' -and $_.CommandLine -like '*src/index.js*') -or
+        ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*service.cmd*run*')
     })
     if ($procs.Count -gt 0) {
         $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -144,6 +164,7 @@ function Get-ServiceStatus {
 
 if ($Action) {
     switch ($Action.ToLower()) {
+        "run"       { Run-Supervisor; break }
         "install"   { Install-Service; break }
         "1"         { Install-Service; break }
         "uninstall" { Uninstall-Service; break }
