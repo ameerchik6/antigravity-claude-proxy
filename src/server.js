@@ -470,7 +470,7 @@ app.get('/account-limits', async (req, res) => {
         });
 
         // Collect all unique model IDs
-        const allModelIds = new Set();
+        const allModelIds = new Set(config.customModels || []);
         for (const account of accountLimits) {
             for (const modelId of Object.keys(account.models || {})) {
                 allModelIds.add(modelId);
@@ -646,6 +646,7 @@ app.get('/account-limits', async (req, res) => {
             timestamp: new Date().toLocaleString(),
             totalAccounts: allAccounts.length,
             models: sortedModels,
+            customModels: config.customModels || [],
             modelConfig: config.modelMapping || {},
             globalQuotaThreshold: config.globalQuotaThreshold || 0,
             accounts: accountLimits.map(acc => {

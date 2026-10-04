@@ -13,6 +13,7 @@ import {
     getModelFamily,
     MODEL_VALIDATION_CACHE_TTL_MS
 } from '../constants.js';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { throttledFetch } from '../utils/helpers.js';
 
@@ -25,6 +26,7 @@ const modelCache = new WeakMap();
  * @returns {boolean} True if model is supported
  */
 function isSupportedModel(modelId) {
+    if (config.customModels?.includes(modelId)) return true;
     const family = getModelFamily(modelId);
     return family === 'claude' || family === 'gemini';
 }
@@ -400,6 +402,7 @@ async function populateModelCache(accountManager) {
  */
 export async function isValidModel(modelId, accountManager) {
     try {
+        if (config.customModels?.includes(modelId)) return true;
         const { models, incomplete } = await populateModelCache(accountManager);
         // Empty/partial discovery must not reject a model another account may have.
         return Object.hasOwn(models, modelId) || incomplete || accountManager.getAllAccounts().length === 0;
