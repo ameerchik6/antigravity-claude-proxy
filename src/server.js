@@ -908,12 +908,26 @@ const handleChatCompletions = async (req, res) => {
                 }
 
                 const openAIStream = streamAnthropicToOpenAI(replayGenerator(), requestedModel);
-                for await (const sseChunk of openAIStream) {
-                    res.write(sseChunk);
-                    if (res.flush) res.flush();
-                }
 
-                res.end();
+                // SSE keep-alive ping to prevent client idle timeouts during long thinking or tool generation
+                const keepAliveTimer = setInterval(() => {
+                    if (!res.writableEnded && res.writable) {
+                        res.write(': keep-alive\n\n');
+                        if (res.flush) res.flush();
+                    }
+                }, 15000);
+                res.on('close', () => clearInterval(keepAliveTimer));
+
+                try {
+                    for await (const sseChunk of openAIStream) {
+                        res.write(sseChunk);
+                        if (res.flush) res.flush();
+                    }
+
+                    res.end();
+                } finally {
+                    clearInterval(keepAliveTimer);
+                }
             } catch (error) {
                 if (!res.headersSent) {
                     logger.error('[OpenAI API] Initial stream error:', error);
@@ -1222,13 +1236,26 @@ app.post('/v1/messages', async (req, res) => {
                     if (res.flush) res.flush();
                 }
 
-                // Continue with the rest of the stream
-                for await (const event of generator) {
-                    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-                    if (res.flush) res.flush();
+                // SSE keep-alive ping to prevent client idle timeouts during long thinking or tool generation
+                const keepAliveTimer = setInterval(() => {
+                    if (!res.writableEnded && res.writable) {
+                        res.write(': keep-alive\n\n');
+                        if (res.flush) res.flush();
+                    }
+                }, 15000);
+                res.on('close', () => clearInterval(keepAliveTimer));
+
+                try {
+                    // Continue with the rest of the stream
+                    for await (const event of generator) {
+                        res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+                        if (res.flush) res.flush();
+                    }
+
+                    res.end();
+                } finally {
+                    clearInterval(keepAliveTimer);
                 }
-                
-                res.end();
 
             } catch (error) {
                 // If we haven't sent headers yet, we can send a proper error status
