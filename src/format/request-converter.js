@@ -168,9 +168,13 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     }
     if (top_p !== undefined) {
         googleRequest.generationConfig.topP = top_p;
+    } else {
+        googleRequest.generationConfig.topP = 1.0;
     }
     if (top_k !== undefined) {
         googleRequest.generationConfig.topK = top_k;
+    } else {
+        googleRequest.generationConfig.topK = 40;
     }
     if (stop_sequences && stop_sequences.length > 0) {
         googleRequest.generationConfig.stopSequences = stop_sequences;
@@ -207,12 +211,20 @@ export function convertAnthropicToGoogle(anthropicRequest) {
         } else if (isGeminiModel) {
             // Gemini thinking config (uses camelCase)
             // Clamp budget to model-specific max (e.g., Gemini 2.5 Flash max is 24,576)
+            const thinkingBudget = clampGeminiThinkingBudget(modelName, thinking?.budget_tokens);
             const thinkingConfig = {
                 includeThoughts: true,
-                thinkingBudget: clampGeminiThinkingBudget(modelName, thinking?.budget_tokens)
+                thinkingBudget
             };
             logger.debug(`[RequestConverter] Gemini thinking enabled with budget: ${thinkingConfig.thinkingBudget}`);
 
+            // Ensure maxOutputTokens is greater than thinkingBudget so thoughts don't exhaust the full response cap
+            const currentMaxTokens = googleRequest.generationConfig.maxOutputTokens;
+            if (currentMaxTokens && currentMaxTokens <= thinkingBudget) {
+                const adjustedMaxTokens = Math.min(thinkingBudget + 4096, GEMINI_MAX_OUTPUT_TOKENS);
+                logger.debug(`[RequestConverter] Adjusting Gemini max_tokens from ${currentMaxTokens} to ${adjustedMaxTokens} for thinking budget`);
+                googleRequest.generationConfig.maxOutputTokens = adjustedMaxTokens;
+            }
 
             googleRequest.generationConfig.thinkingConfig = thinkingConfig;
         }

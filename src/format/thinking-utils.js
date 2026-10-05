@@ -16,7 +16,7 @@ import { logger } from '../utils/logger.js';
 const GEMINI_THINKING_BUDGET_LIMITS = {
     '2.5': 24576,
 };
-const GEMINI_DEFAULT_THINKING_BUDGET = 16000;
+const GEMINI_DEFAULT_THINKING_BUDGET = 4096;
 const GEMINI_DEFAULT_THINKING_BUDGET_LIMIT = 128000;
 
 /**
@@ -659,9 +659,9 @@ export function closeToolLoopForThinking(messages, targetFamily = null) {
     // instruction and the count-bearing text is unstable across requests.
     // Claude targets keep the recovery: the Anthropic API hard-rejects
     // unclosed tool_use ids, so the interrupted-tool synthesis stays needed.
-    // Set ANTIGRAVITY_DISABLE_THINKING_RECOVERY=1 to activate.
+    // Defaults to disabled for Gemini (set ANTIGRAVITY_DISABLE_THINKING_RECOVERY=0 to force).
     if (
-        process.env.ANTIGRAVITY_DISABLE_THINKING_RECOVERY === '1' &&
+        process.env.ANTIGRAVITY_DISABLE_THINKING_RECOVERY !== '0' &&
         targetFamily === 'gemini'
     ) {
         return messages;
