@@ -57,10 +57,11 @@ const IDENTITY_SCRUB_RULES = [
 function scrubClientIdentity(text) {
     if (typeof text !== 'string') return text;
     let out = text;
-    // Strip billing headers injected by Claude Code (e.g., x-anthropic-billing-header: cc_version=...)
+    // Strip billing and Stainless SDK headers injected by Claude Code
     out = out
         .replace(/^x-anthropic-billing-header:[^\n]*\n?/gim, '')
-        .replace(/^x-anthropic-[a-z0-9_-]+:[^\n]*\n?/gim, '');
+        .replace(/^x-anthropic-[a-z0-9_-]+:[^\n]*\n?/gim, '')
+        .replace(/^x-stainless-[a-z0-9_-]+:[^\n]*\n?/gim, '');
     for (const [term, replacement] of IDENTITY_SCRUB_RULES) {
         out = out.split(term).join(replacement);
     }

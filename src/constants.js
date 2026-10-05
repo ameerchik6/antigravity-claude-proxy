@@ -81,9 +81,10 @@ function getPlatformEnum() {
 
 // Centralized client metadata (used in request bodies for loadCodeAssist, onboardUser, etc.)
 // Using numeric enum values as expected by the Cloud Code API
+// Note: pinned to DARWIN_ARM64 matching omniroute (#8098) for maximum trust from Google Cloud Code backend
 export const CLIENT_METADATA = {
-    ideType: IDE_TYPE.ANTIGRAVITY,   // 6 - identifies as Antigravity client
-    platform: getPlatformEnum(),      // Runtime platform detection
+    ideType: IDE_TYPE.ANTIGRAVITY,   // 9 - identifies as Antigravity client
+    platform: PLATFORM.DARWIN_ARM64,  // 2 - Pinned to macOS arm64 for highest trust from Google backend
     pluginType: PLUGIN_TYPE.GEMINI    // 2
 };
 

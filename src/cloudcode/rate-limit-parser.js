@@ -203,6 +203,12 @@ export function parseRateLimitReason(errorText, status) {
 
     const lower = (errorText || '').toLowerCase();
 
+    // Burst/RPM throttle may report exhausted-capacity with a 0s reset window (matches omniroute).
+    // The explicit 0s reset is stronger evidence than generic wording, so treat as RATE_LIMIT_EXCEEDED.
+    if (/\breset\s+(?:after|in)\s+0s\b/.test(lower)) {
+        return 'RATE_LIMIT_EXCEEDED';
+    }
+
     // Check for quota exhaustion (daily/hourly limits)
     if (lower.includes('quota_exhausted') ||
         lower.includes('quotaresetdelay') ||

@@ -252,12 +252,8 @@ export function generateSmartUserAgent() {
     }
 
     const { version } = getUserAgentVersionConfig();
-    const os = platform();
-    const architecture = process.arch;
-
-    const osName = os === 'darwin' ? 'darwin' : (os === 'win32' ? 'win32' : 'linux');
-
-    cachedUserAgent = `antigravity/${version} ${osName}/${architecture}`;
+    // Pin to darwin/arm64 matching omniroute (#8098) for maximum trust from Google Cloud Code backend
+    cachedUserAgent = `antigravity/${version} darwin/arm64`;
     cachedUserAgentAt = Date.now();
     return cachedUserAgent;
 }
