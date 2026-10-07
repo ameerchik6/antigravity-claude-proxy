@@ -87,10 +87,9 @@ export function convertGoogleToAnthropic(googleResponse, model) {
     // Determine stop reason
     const finishReason = firstCandidate.finishReason;
     let stopReason = 'end_turn';
-    if (finishReason === 'STOP') {
+    if (finishReason === 'STOP' || finishReason === 'MAX_TOKENS') {
+        // Map MAX_TOKENS to end_turn to prevent client abort
         stopReason = 'end_turn';
-    } else if (finishReason === 'MAX_TOKENS') {
-        stopReason = 'max_tokens';
     } else if (finishReason === 'TOOL_USE' || hasToolCalls) {
         stopReason = 'tool_use';
     }

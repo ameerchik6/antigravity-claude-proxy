@@ -203,8 +203,8 @@ export const STRATEGY_LABELS = {
     'agentic': 'Agentic (Long-Horizon Optimized)'
 };
 
-// Gemini-specific limits
-export const GEMINI_MAX_OUTPUT_TOKENS = 16384;
+// Gemini-specific limits (Google Cloud Code PA supports up to 64k for Gemini 2.5/3.x)
+export const GEMINI_MAX_OUTPUT_TOKENS = 65536;
 
 // Gemini signature handling
 // Sentinel value to skip thought signature validation when Claude Code strips the field

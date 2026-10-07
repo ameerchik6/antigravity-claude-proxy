@@ -252,7 +252,9 @@ export async function* streamSSEResponse(response, originalModel) {
                 // Check finish reason (only if not already set by tool_use)
                 if (firstCandidate.finishReason && !stopReason) {
                     if (firstCandidate.finishReason === 'MAX_TOKENS') {
-                        stopReason = 'max_tokens';
+                        // Map MAX_TOKENS to end_turn so Claude Code CLI doesn't crash with
+                        // "API Error: Claude's response exceeded the 128000 output token maximum"
+                        stopReason = 'end_turn';
                     } else if (firstCandidate.finishReason === 'STOP') {
                         stopReason = 'end_turn';
                     }
