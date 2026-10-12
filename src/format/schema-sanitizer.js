@@ -525,7 +525,8 @@ export function sanitizeSchema(schema) {
                 sanitized.enum = [String(value)];
             } else {
                 // For complex const values, add as description hint instead
-                sanitized = appendDescriptionHint(sanitized, `Must be: ${JSON.stringify(value)}`);
+                // local fix: `sanitized` is a const; merge the hint instead of reassigning
+                Object.assign(sanitized, appendDescriptionHint(sanitized, `Must be: ${JSON.stringify(value)}`));
             }
             continue;
         }

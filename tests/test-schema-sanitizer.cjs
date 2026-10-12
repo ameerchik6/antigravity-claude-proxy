@@ -358,6 +358,26 @@ async function runTests() {
         assertGoogleSchemaValid(cleanSchema(sanitizeSchema(schema)));
     });
 
+    // Test 16: Non-string const and enum conversion (issue #379 / PR #385)
+    test('Non-string const and enum conversion', () => {
+        // Boolean const converted to string enum
+        const boolConst = sanitizeSchema({ type: 'boolean', const: true });
+        assertEqual(boolConst.enum, ['true'], 'Boolean const should be converted to string enum');
+
+        // Number const converted to string enum
+        const numConst = sanitizeSchema({ type: 'number', const: 42 });
+        assertEqual(numConst.enum, ['42'], 'Number const should be converted to string enum');
+
+        // Non-string enum array converted to string elements
+        const mixedEnum = sanitizeSchema({ enum: [true, false, 1, 'two'] });
+        assertEqual(mixedEnum.enum, ['true', 'false', '1', 'two'], 'Enum values should all be strings');
+
+        // Complex const object does not throw and merges into description hint
+        const complexConst = sanitizeSchema({ type: 'object', const: { foo: 'bar' } });
+        assertEqual(complexConst.enum, undefined, 'Complex const should not be added to enum');
+        assertEqual(complexConst.description, 'Must be: {"foo":"bar"}', 'Complex const should be described in hint');
+    });
+
     // Summary
     console.log('\n' + '═'.repeat(60));
     console.log(`Tests completed: ${passed} passed, ${failed} failed`);
