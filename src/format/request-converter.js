@@ -24,18 +24,15 @@ import {
 } from './thinking-utils.js';
 import { logger } from '../utils/logger.js';
 
-/**
- * Clean system instruction text from Claude Code artifacts.
- * Claude Code (v2.1.274+) injects billing headers into system prompt blocks:
- * e.g. "x-anthropic-billing-header: cc_version=2.1.274.834; cc_entrypoint=sdk-cli;"
- * Cloud Code API rejects requests containing this with 429 RESOURCE_EXHAUSTED.
- */
-function cleanSystemInstructionText(text) {
-    if (typeof text !== 'string') return text;
-    return text
-        .replace(/^x-anthropic-billing-header:[^\n]*\n?/gim, '')
-        .replace(/^x-anthropic-[a-z0-9_-]+:[^\n]*\n?/gim, '')
-        .trim();
+// Claude Code injects a billing pseudo-header as a system prompt block, e.g.
+// "x-anthropic-billing-header: cc_version=2.1.274.834; cc_entrypoint=sdk-cli;".
+// Cloud Code API answers any request containing it with a 429 RESOURCE_EXHAUSTED
+// even when quota remains (Issue #375).
+const BILLING_HEADER_LINE = /^x-anthropic-billing-header:[^\n]*\n?/gim;
+
+function stripBillingHeader(text) {
+    if (typeof text !== 'string' || !/x-anthropic-billing-header:/i.test(text)) return text;
+    return text.replace(BILLING_HEADER_LINE, '').trim();
 }
 
 /**
@@ -81,18 +78,17 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     if (system) {
         let systemParts = [];
         if (typeof system === 'string') {
-            const cleaned = cleanSystemInstructionText(system);
-            if (cleaned) {
-                systemParts = [{ text: cleaned }];
-            }
+            systemParts = [{ text: stripBillingHeader(system) }];
         } else if (Array.isArray(system)) {
             // Filter for text blocks as system prompts are usually text
             // Anthropic supports text blocks in system prompts
             systemParts = system
                 .filter(block => block.type === 'text')
-                .map(block => ({ text: cleanSystemInstructionText(block.text) }))
-                .filter(block => block.text && block.text.length > 0);
+                .map(block => ({ text: stripBillingHeader(block.text) }));
         }
+
+        // Drop parts left empty once the billing header is stripped
+        systemParts = systemParts.filter(part => part.text);
 
         if (systemParts.length > 0) {
             googleRequest.systemInstruction = {
