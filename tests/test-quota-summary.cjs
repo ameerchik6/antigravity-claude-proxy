@@ -187,6 +187,44 @@ async function runTests() {
         assertEqual(groupQuotas.claude.percent, 50);
     });
 
+    test('Synthesizes missing Gemini group when quotaSummary only contains Claude and GPT models', () => {
+        const mockAccount = {
+            email: 'claude-only@example.com',
+            quotaSummary: {
+                groups: [
+                    {
+                        displayName: 'Claude and GPT models',
+                        description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS',
+                        buckets: [
+                            { window: 'weekly', remainingFraction: 0.70, resetTime: '2026-09-19T00:00:00Z' },
+                            { window: '5h', remainingFraction: 0.40, resetTime: '2026-09-12T21:00:00Z' }
+                        ]
+                    }
+                ]
+            },
+            limits: {
+                'gemini-2.5-flash': { remainingFraction: 0.85, resetTime: '2026-09-12T19:00:00Z' }
+            }
+        };
+
+        const groups = accountManagerComp.getQuotaGroups(mockAccount);
+        assertEqual(groups.length, 2);
+        assertTrue(groups.some(g => g.displayName === 'Gemini Models'));
+        assertTrue(groups.some(g => g.displayName === 'Claude and GPT models'));
+
+        const groupQuotas = accountManagerComp.getAccountGroupQuotas(mockAccount);
+        assertEqual(groupQuotas.gemini.percent, 85);
+        assertEqual(groupQuotas.claude.percent, 40);
+        assertEqual(groupQuotas.claude.weeklyPercent, 70);
+    });
+
+    test('USER_QUOTA_SUMMARY_ENDPOINTS and headers configure daily endpoint with CLI User-Agent', async () => {
+        const { USER_QUOTA_SUMMARY_ENDPOINTS, USER_QUOTA_SUMMARY_HEADERS } = await import('../src/constants.js');
+        assertTrue(Array.isArray(USER_QUOTA_SUMMARY_ENDPOINTS), 'Should be an array');
+        assertEqual(USER_QUOTA_SUMMARY_ENDPOINTS[0], 'https://daily-cloudcode-pa.googleapis.com');
+        assertTrue(USER_QUOTA_SUMMARY_HEADERS['User-Agent'].includes('antigravity/cli/1.4.0'), 'Must include agy CLI user-agent');
+    });
+
     console.log('\n' + '='.repeat(60));
     console.log(`Results: ${passed} passed, ${failed} failed`);
     if (failed > 0) process.exit(1);

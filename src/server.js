@@ -584,6 +584,18 @@ app.get('/account-limits', async (req, res) => {
                                 const resetMs = new Date(bkt.resetTime).getTime() - Date.now();
                                 if (resetMs > 0) cell += ` (${formatDuration(resetMs)})`;
                             }
+                        } else if (def.window === '5h' && !grp) {
+                            const models = Object.entries(acc.models || {});
+                            const matching = models.filter(([id]) => def.groupMatch.test(id));
+                            const valid = matching.find(([_, m]) => m?.remainingFraction !== null && m?.remainingFraction !== undefined);
+                            if (valid && valid[1]?.remainingFraction !== null && valid[1]?.remainingFraction !== undefined) {
+                                const pct = Math.round(valid[1].remainingFraction * 100);
+                                cell = `${pct}%`;
+                                if (valid[1].resetTime) {
+                                    const resetMs = new Date(valid[1].resetTime).getTime() - Date.now();
+                                    if (resetMs > 0) cell += ` (${formatDuration(resetMs)})`;
+                                }
+                            }
                         }
                         sRow += cell.padEnd(accountColWidth);
                     }

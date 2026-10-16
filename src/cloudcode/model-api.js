@@ -9,6 +9,8 @@ import {
     ANTIGRAVITY_HEADERS,
     LOAD_CODE_ASSIST_ENDPOINTS,
     LOAD_CODE_ASSIST_HEADERS,
+    USER_QUOTA_SUMMARY_ENDPOINTS,
+    USER_QUOTA_SUMMARY_HEADERS,
     CLIENT_METADATA,
     getModelFamily,
     MODEL_VALIDATION_CACHE_TTL_MS
@@ -174,13 +176,12 @@ export async function getModelQuotas(token, projectId = null) {
 export async function getUserQuotaSummary(token, projectId = null) {
     const headers = {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...ANTIGRAVITY_HEADERS
+        ...USER_QUOTA_SUMMARY_HEADERS
     };
 
     const body = projectId ? { project: projectId } : {};
 
-    for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+    for (const endpoint of USER_QUOTA_SUMMARY_ENDPOINTS) {
         try {
             const url = `${endpoint}/v1internal:retrieveUserQuotaSummary`;
             const response = await throttledFetch(url, {

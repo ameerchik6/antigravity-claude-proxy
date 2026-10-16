@@ -116,6 +116,29 @@ export const LOAD_CODE_ASSIST_ENDPOINTS = [
     ANTIGRAVITY_ENDPOINT_DAILY
 ];
 
+/**
+ * Generate Antigravity CLI User-Agent matching agy binary
+ * Google's backend requires CLI client User-Agent to return full quota summary with Gemini Models group
+ */
+export function getCliUserAgent() {
+    const osType = platform() === 'win32' ? 'windows' : (platform() === 'darwin' ? 'darwin' : 'linux');
+    const archType = arch() === 'x64' ? 'amd64' : (arch() === 'arm64' ? 'arm64' : arch());
+    return `antigravity/cli/1.4.0 (aidev_client; os_type=${osType}; arch=${archType}; cl=1000494485; auth_method=consumer)`;
+}
+
+// Headers specifically for retrieveUserQuotaSummary matching agy CLI
+export const USER_QUOTA_SUMMARY_HEADERS = {
+    'User-Agent': getCliUserAgent(),
+    'Content-Type': 'application/json',
+    'X-Client-Name': 'antigravity'
+};
+
+// Endpoint order for retrieveUserQuotaSummary (daily first with CLI User-Agent, prod as fallback)
+export const USER_QUOTA_SUMMARY_ENDPOINTS = [
+    ANTIGRAVITY_ENDPOINT_DAILY,
+    ANTIGRAVITY_ENDPOINT_PROD
+];
+
 // Endpoint order for onboardUser (same as generateContent fallbacks)
 export const ONBOARD_USER_ENDPOINTS = ANTIGRAVITY_ENDPOINT_FALLBACKS;
 

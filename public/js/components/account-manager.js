@@ -386,24 +386,50 @@ window.Components.accountManager = () => ({
         const acc = account || { limits: this.selectedAccountLimits, quotaSummary: this.selectedAccountQuotaSummary };
         const summary = acc.quotaSummary || (this.selectedAccountEmail === acc.email ? this.selectedAccountQuotaSummary : null);
 
-        if (summary && Array.isArray(summary.groups) && summary.groups.length > 0) {
-            return summary.groups.map(grp => ({
-                id: grp.displayName?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'group',
-                displayName: grp.displayName || 'Model Group',
-                description: grp.description || '',
-                buckets: (grp.buckets || []).map(b => ({
-                    bucketId: b.bucketId || '',
-                    displayName: b.displayName || (b.window === 'weekly' ? 'Weekly Limit Remaining' : 'Five Hour Limit Remaining'),
-                    window: b.window || (b.bucketId?.includes('weekly') ? 'weekly' : '5h'),
-                    remainingFraction: b.remainingFraction !== undefined ? b.remainingFraction : null,
-                    percent: b.remainingFraction !== null && b.remainingFraction !== undefined ? Math.round(b.remainingFraction * 100) : null,
-                    resetTime: b.resetTime || null,
-                    description: b.description || ''
-                }))
-            }));
+        const groups = [];
+        const normalizeBucket = b => ({
+            bucketId: b.bucketId || '',
+            displayName: b.displayName || (b.window === 'weekly' ? 'Weekly Limit Remaining' : 'Five Hour Limit Remaining'),
+            window: b.window || (b.bucketId?.includes('weekly') ? 'weekly' : '5h'),
+            remainingFraction: b.remainingFraction !== undefined ? b.remainingFraction : null,
+            percent: b.remainingFraction !== null && b.remainingFraction !== undefined ? Math.round(b.remainingFraction * 100) : null,
+            resetTime: b.resetTime || null,
+            description: b.description || ''
+        });
+
+        if (summary) {
+            if (Array.isArray(summary.groups) && summary.groups.length > 0) {
+                for (const grp of summary.groups) {
+                    groups.push({
+                        id: grp.displayName?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'group',
+                        displayName: grp.displayName || 'Model Group',
+                        description: grp.description || '',
+                        buckets: (grp.buckets || []).map(normalizeBucket)
+                    });
+                }
+            } else if (Array.isArray(summary.buckets) && summary.buckets.length > 0) {
+                const geminiBuckets = summary.buckets.filter(b => (b.bucketId || '').toLowerCase().includes('gemini'));
+                const claudeBuckets = summary.buckets.filter(b => !(b.bucketId || '').toLowerCase().includes('gemini'));
+                if (geminiBuckets.length > 0) {
+                    groups.push({
+                        id: 'gemini-group',
+                        displayName: 'Gemini Models',
+                        description: 'Models within this group: Gemini Flash, Gemini Pro',
+                        buckets: geminiBuckets.map(normalizeBucket)
+                    });
+                }
+                if (claudeBuckets.length > 0) {
+                    groups.push({
+                        id: '3p-group',
+                        displayName: 'Claude and GPT models',
+                        description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS',
+                        buckets: claudeBuckets.map(normalizeBucket)
+                    });
+                }
+            }
         }
 
-        // Synthesize groups from limits if quotaSummary not available
+        // Check if any expected groups are missing from API summary and synthesize from limits
         const limits = acc.limits || this.selectedAccountLimits || {};
         const geminiModels = Object.entries(limits).filter(([id]) => id.toLowerCase().includes('gemini'));
         const claudeGptModels = Object.entries(limits).filter(([id]) => !id.toLowerCase().includes('gemini'));
@@ -423,9 +449,11 @@ window.Components.accountManager = () => ({
             };
         };
 
-        const groups = [];
-        if (geminiModels.length > 0 || Object.keys(limits).length === 0) {
-            groups.push({
+        const hasGeminiGroup = groups.some(g => /gemini/i.test(g.displayName || g.id || ''));
+        const hasClaudeGroup = groups.some(g => /claude|3p|gpt/i.test(g.displayName || g.id || ''));
+
+        if (!hasGeminiGroup && (geminiModels.length > 0 || groups.length === 0)) {
+            groups.unshift({
                 id: 'gemini-group',
                 displayName: 'Gemini Models',
                 description: 'Models within this group: Gemini Flash, Gemini Pro',
@@ -435,7 +463,7 @@ window.Components.accountManager = () => ({
             });
         }
 
-        if (claudeGptModels.length > 0) {
+        if (!hasClaudeGroup && claudeGptModels.length > 0) {
             groups.push({
                 id: '3p-group',
                 displayName: 'Claude and GPT models',
