@@ -69,3 +69,5 @@ service.cmd uninstall                # remove Windows service
 **Persistent Signature Cache & Cache Continuity**: Thinking signatures persist to `~/.config/antigravity-proxy/signature-store.json` (override with `ANTIGRAVITY_SIGNATURE_STORE`) without expiry across restarts. Session IDs are derived per-conversation (`sha256(accountEmail, first user text)`) to prevent cross-conversation cache eviction.
 
 **Dynamic Custom Model IDs**: Models can be added or deleted dynamically via the WebUI Models tab or `/api/models` (stored in `config.json` under `customModels`), with autocomplete in the Model Mapping settings.
+
+**i18n & WebUI Localization**: Never hardcode user-facing strings directly in HTML views or JavaScript components. Always use `$store.global.t('key')` (or `store.t('key')`) and register the key across all translation files in `public/js/translations/` (`en.js`, `ru.js`, `zh.js`, `tr.js`, `pt.js`, `id.js`, and any future locale files). Whenever introducing new UI text, labels, hints, modal dialogs, or toast notifications, keep all translation dictionaries synchronized.
