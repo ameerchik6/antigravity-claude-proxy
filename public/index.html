@@ -61,23 +61,29 @@
     </div>
 
     <!-- Navbar -->
-    <div
-        class="h-14 border-b border-space-border flex items-center px-4 lg:px-6 justify-between bg-space-900/50 backdrop-blur-md z-50 relative">
-        <div class="flex items-center gap-3">
+    <header
+        class="app-header h-[60px] sm:h-14 border-b border-space-border flex items-center pl-2 pr-3 sm:px-4 lg:px-6 justify-between bg-space-900/50 backdrop-blur-md z-50 relative flex-none">
+        <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 mr-2 sm:mr-0">
             <!-- Mobile Menu Button -->
-            <button @click="toggleSidebar()" class="text-gray-400 hover:text-white focus:outline-none p-1 transition-colors">
+            <button @click="toggleSidebar()"
+                class="app-header-hamburger w-11 h-11 sm:w-auto sm:h-auto flex items-center justify-center text-gray-400 hover:text-white focus:outline-none p-1 transition-colors rounded-lg flex-none"
+                aria-label="Menu">
                 <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
             </button>
 
             <div
-                class="w-8 h-8 rounded bg-gradient-to-br from-neon-purple to-blue-600 flex items-center justify-center text-white font-bold shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                class="app-header-logo w-[34px] h-[34px] sm:w-8 sm:h-8 rounded bg-gradient-to-br from-neon-purple to-blue-600 flex items-center justify-center text-white font-bold shadow-[0_0_15px_rgba(168,85,247,0.4)] flex-none">
                 AG</div>
-            <div class="flex flex-col">
-                <span class="text-sm font-bold tracking-wide text-white"
+            <div class="app-header-text flex-1 min-w-0 flex flex-col justify-center">
+                <span class="app-header-title text-[15px] sm:text-sm font-bold tracking-wide text-white whitespace-nowrap truncate"
                     x-text="$store.global.t('systemName')">ANTIGRAVITY</span>
-                <div class="flex items-center gap-1.5">
+                <!-- Mobile Subtitle -->
+                <span class="app-header-subtitle-mobile sm:hidden text-[10px] text-gray-500 font-mono tracking-wider whitespace-nowrap overflow-hidden text-ellipsis block"
+                    x-text="'Claude Proxy · v' + $store.global.version">Claude Proxy · v1.0.0</span>
+                <!-- Desktop Subtitle -->
+                <div class="app-header-subtitle-desktop hidden sm:flex items-center gap-1.5 whitespace-nowrap">
                     <span class="text-[10px] text-gray-500 font-mono tracking-wider"
                         x-text="$store.global.t('systemDesc')">CLAUDE PROXY SYSTEM</span>
                     <span class="text-[10px] text-gray-500 font-mono tracking-wider"
@@ -86,32 +92,33 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 sm:gap-4 flex-none">
             <!-- Connection Pill -->
-            <div class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border transition-all duration-300"
+            <div class="app-header-badge flex items-center gap-2 px-3 h-7 sm:h-auto sm:py-1 rounded-full text-xs font-mono border transition-all duration-300 flex-none whitespace-nowrap"
                 :class="connectionStatus === 'connected'
                     ? 'bg-neon-green/10 border-neon-green/20 text-neon-green'
                     : (connectionStatus === 'connecting' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' : 'bg-red-500/10 border-red-500/20 text-red-500')">
-                <div class="w-1.5 h-1.5 rounded-full"
+                <div class="w-1.5 h-1.5 rounded-full flex-none"
                     :class="connectionStatus === 'connected' ? 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)]' : (connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500')">
                 </div>
-                <span
+                <span class="whitespace-nowrap"
                     x-text="connectionStatus === 'connected' ? $store.global.t('online') : (connectionStatus === 'disconnected' ? $store.global.t('offline') : $store.global.t('connecting'))"></span>
             </div>
 
-            <div class="h-4 w-px bg-space-border"></div>
+            <div class="app-header-divider hidden sm:block h-4 w-px bg-space-border flex-none"></div>
 
             <!-- Refresh Button -->
-            <button type="button" class="btn btn-ghost btn-xs btn-square text-gray-400 hover:text-white hover:bg-white/5"
-                @click="fetchData" :disabled="loading" :title="$store.global.t('refreshData')" aria-label="Refresh data">
-                <svg class="w-4 h-4" :class="{'animate-spin': loading}" fill="none" stroke="currentColor"
+            <button type="button"
+                class="app-header-refresh w-11 h-11 sm:w-auto sm:h-auto sm:btn sm:btn-ghost sm:btn-xs sm:btn-square flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex-none"
+                @click="fetchData" :disabled="loading" :title="$store.global.t('refreshData')" aria-label="Refresh">
+                <svg class="w-4 h-4 flex-none" :class="{'animate-spin': loading}" fill="none" stroke="currentColor"
                     viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
             </button>
         </div>
-    </div>
+    </header>
 
     <!-- Layout -->
     <div class="flex h-[calc(100vh-56px)] relative">
