@@ -205,6 +205,63 @@ window.Components.accountManager = () => ({
         document.getElementById('quota_modal').showModal();
     },
 
+    getGroupDisplayName(group) {
+        if (!group) return '';
+        const store = Alpine.store('global');
+        const name = group.displayName || '';
+        if (/gemini/i.test(name)) {
+            return store.t('geminiModels') || 'Gemini Models';
+        }
+        if (/claude|gpt|3p/i.test(name)) {
+            return store.t('claudeGptModels') || 'Claude and GPT models';
+        }
+        return name;
+    },
+
+    getGroupDescription(group) {
+        if (!group) return '';
+        const store = Alpine.store('global');
+        const desc = group.description || '';
+        if (/gemini/i.test(group.displayName || group.id || '')) {
+            return store.t('geminiModelsDesc') || desc;
+        }
+        if (/claude|gpt|3p/i.test(group.displayName || group.id || '')) {
+            return store.t('claudeGptModelsDesc') || desc;
+        }
+        return desc;
+    },
+
+    getBucketDisplayName(bucket) {
+        if (!bucket) return '';
+        const store = Alpine.store('global');
+        if (bucket.window === 'weekly' || (bucket.bucketId && bucket.bucketId.includes('weekly'))) {
+            return store.t('weeklyLimitRemaining') || 'Weekly Limit Remaining';
+        }
+        return store.t('fiveHourLimitRemaining') || 'Five Hour Limit Remaining';
+    },
+
+    getBucketDescription(bucket) {
+        if (!bucket) return '';
+        const store = Alpine.store('global');
+        const desc = bucket.description || '';
+        if (!desc) return '';
+        if (desc.toLowerCase().includes('quota available')) {
+            return store.t('quotaAvailable') || 'Quota available';
+        }
+        const weeklyMatch = desc.match(/used some of your weekly limit.*?refresh in\s+([^.]+)/i);
+        if (weeklyMatch) {
+            return store.t('weeklyLimitUsedDesc', { time: weeklyMatch[1].trim() }) || desc;
+        }
+        const fiveHourMatch = desc.match(/used some of your 5-hour limit.*?refresh in\s+([^.]+)/i);
+        if (fiveHourMatch) {
+            return store.t('fiveHourLimitUsedDesc', { time: fiveHourMatch[1].trim() }) || desc;
+        }
+        if (desc.includes('Shared 5-hour limit for models in this group')) {
+            return store.t('shared5hLimitDesc') || desc;
+        }
+        return desc;
+    },
+
     // Threshold settings
     thresholdDialog: {
         email: '',
