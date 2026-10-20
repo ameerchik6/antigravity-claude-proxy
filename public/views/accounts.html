@@ -310,7 +310,17 @@
                             </template>
                         </td>
                         <td class="py-4 pr-6">
-                            <div class="flex justify-end gap-2">
+                            <div class="flex items-center justify-end gap-2">
+                                <!-- Verify Button next to settings and delete -->
+                                <a x-show="acc.status === 'verify' || acc.verificationUrl || acc.verifyUrl"
+                                   :href="acc.verificationUrl || acc.verifyUrl"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="px-3 py-1.5 text-xs font-semibold font-mono rounded-lg bg-amber-500 hover:bg-amber-400 text-black transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                                   title="Verify account">
+                                    <span>Verify</span>
+                                    <span class="text-sm font-bold">↗</span>
+                                </a>
                                 <!-- Fix Button -->
                                 <button x-show="acc.status === 'invalid' && !acc.verificationUrl && !acc.verifyUrl"
                                     class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 transition-all"
@@ -433,8 +443,17 @@
                         </span>
                     </div>
 
-                    <!-- Quick Actions: Settings & Delete -->
+                    <!-- Quick Actions: Verify + Settings + Refresh + Delete -->
                     <div class="flex items-center gap-1 flex-shrink-0">
+                        <a x-show="acc.status === 'verify' || acc.verificationUrl || acc.verifyUrl"
+                           :href="acc.verificationUrl || acc.verifyUrl"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="px-2 py-1 text-[11px] font-semibold font-mono rounded-lg bg-amber-500 hover:bg-amber-400 text-black transition-all flex items-center gap-1 shadow-sm"
+                           title="Verify account">
+                            <span>Verify</span>
+                            <span class="font-bold">↗</span>
+                        </a>
                         <button class="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-neon-yellow transition-colors"
                                 @click="openThresholdModal(acc)"
                                 title="Account Settings">
@@ -442,6 +461,17 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                        <button class="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                @click="refreshAccount(acc.email)"
+                                :disabled="refreshing"
+                                :title="$store.global.t('refreshData')">
+                            <svg class="w-4 h-4 transition-transform"
+                                 :class="{ 'animate-spin': refreshing }"
+                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
                         </button>
                         <button class="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-red-400 transition-colors"
