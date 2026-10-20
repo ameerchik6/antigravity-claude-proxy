@@ -94,7 +94,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         t(key, params = {}) {
-            let str = this.translations[this.lang][key] || key;
+            const current = this.translations[this.lang];
+            const fallback = this.translations['en'] || {};
+            let str = (current && current[key]) || fallback[key] || key;
             if (typeof str === 'string') {
                 Object.keys(params).forEach(p => {
                     str = str.replace(`{${p}}`, params[p]);
