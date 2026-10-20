@@ -109,6 +109,9 @@ export function isPermanentAuthFailure(errorText) {
 export function isValidationRequired(errorText) {
     const lower = (errorText || '').toLowerCase();
     return lower.includes('validation_required') ||
+        lower.includes('verify your account') ||
+        lower.includes('eligibility check failed') ||
+        lower.includes('not eligible for antigravity') ||
         lower.includes('account_disabled') ||
         lower.includes('user_disabled');
 }
@@ -129,12 +132,16 @@ export function extractVerificationUrl(errorText) {
             if (detail?.metadata?.validation_url) {
                 return detail.metadata.validation_url;
             }
+            if (Array.isArray(detail?.links)) {
+                const link = detail.links.find(l => l?.url?.includes('accounts.google.com/signin/continue'));
+                if (link?.url) return link.url;
+            }
         }
     } catch {
         // Not valid JSON or no structured field — fall through to regex
     }
     // Fallback: regex match for verification URL in unstructured text
-    const raw = errorText.match(/https:\/\/accounts\.google\.com\/signin\/continue\?[^\s"\\]+/);
+    const raw = errorText.match(/https:\/\/accounts\.google\.com\/signin\/continue\?[^\s"'\\]+/);
     if (!raw) return null;
     return raw[0].replace(/[,.)}>\]]+$/, '');
 }
@@ -198,7 +205,7 @@ export function calculateSmartBackoff(errorText, serverResetMs, consecutiveFailu
 }
 
 // Periodically clean up stale rate limit state (every 60 seconds)
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
     const cutoff = Date.now() - RATE_LIMIT_STATE_RESET_MS;
     for (const [key, state] of rateLimitStateByAccountModel.entries()) {
         if (state.lastAt < cutoff) {
@@ -206,3 +213,6 @@ setInterval(() => {
         }
     }
 }, 60000);
+if (typeof cleanupInterval?.unref === 'function') {
+    cleanupInterval.unref();
+}

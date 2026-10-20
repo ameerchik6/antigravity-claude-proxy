@@ -285,13 +285,15 @@ app.get('/health', async (req, res) => {
                     rateLimitCooldownRemaining: soonestReset ? Math.max(0, soonestReset - Date.now()) : 0
                 };
 
-                // Skip invalid accounts for quota check
-                if (account.isInvalid) {
-                    const isBanned = account.invalidReason?.toLowerCase().includes('banned') || 
-                                     account.invalidReason?.toLowerCase().includes('terms of service');
+                // Skip permanently banned accounts
+                const isBanned = account.isInvalid && (
+                    account.invalidReason?.toLowerCase().includes('banned') ||
+                    account.invalidReason?.toLowerCase().includes('terms of service')
+                );
+                if (isBanned) {
                     return {
                         ...baseInfo,
-                        status: isBanned ? 'banned' : 'invalid',
+                        status: 'banned',
                         error: account.invalidReason,
                         models: {}
                     };
@@ -300,10 +302,68 @@ app.get('/health', async (req, res) => {
                 try {
                     const token = await accountManager.getTokenForAccount(account);
                     const projectId = account.subscription?.projectId || null;
+
+                    // If account was marked for verification or invalid, probe getSubscriptionTier to get fresh verification URL or detect resolution
+                    if (account.verificationRequired || account.isInvalid) {
+                        try {
+                            const sub = await getSubscriptionTier(token);
+                            if (sub?.ineligible?.validationUrl || sub?.ineligible?.reasonCode === 'VALIDATION_REQUIRED') {
+                                const vUrl = sub.ineligible.validationUrl || null;
+                                const reason = sub.ineligible.validationErrorMessage || sub.ineligible.reasonMessage || 'Verify your account in browser to continue.';
+                                account.verificationRequired = true;
+                                account.verificationUrl = vUrl;
+                                accountManager.markInvalid(account.email, reason, vUrl);
+                                return {
+                                    ...baseInfo,
+                                    status: 'verify',
+                                    error: reason,
+                                    verificationUrl: vUrl,
+                                    verifyUrl: vUrl,
+                                    models: {}
+                                };
+                            } else if (account.verificationRequired || account.invalidReason?.includes('Verify')) {
+                                accountManager.clearInvalid(account.email);
+                            }
+                        } catch (subErr) {
+                            if (subErr?.verificationUrl || subErr?.message?.includes('VALIDATION_REQUIRED')) {
+                                const vUrl = subErr.verificationUrl || null;
+                                account.verificationRequired = true;
+                                account.verificationUrl = vUrl;
+                                accountManager.markInvalid(account.email, 'Verify your account in browser to continue.', vUrl);
+                                return {
+                                    ...baseInfo,
+                                    status: 'verify',
+                                    error: 'Verify your account in browser to continue.',
+                                    verificationUrl: vUrl,
+                                    verifyUrl: vUrl,
+                                    models: {}
+                                };
+                            }
+                        }
+                    }
                     const [quotas, quotaSummary] = await Promise.all([
                         getModelQuotas(token, projectId),
-                        getUserQuotaSummary(token, projectId).catch(() => null)
+                        getUserQuotaSummary(token, projectId).catch((err) => {
+                            if (err?.verificationUrl || err?.message?.includes('VALIDATION_REQUIRED')) {
+                                const verifyUrl = err.verificationUrl || null;
+                                accountManager.markInvalid(account.email, 'Verify your account in browser to continue.', verifyUrl);
+                                account.verificationRequired = true;
+                                account.verificationUrl = verifyUrl;
+                            }
+                            return null;
+                        })
                     ]);
+
+                    if (account.verificationRequired || account.isInvalid) {
+                        return {
+                            ...baseInfo,
+                            status: 'verify',
+                            error: account.invalidReason || 'Verify your account in browser to continue.',
+                            verificationUrl: account.verificationUrl || account.verifyUrl || null,
+                            verifyUrl: account.verificationUrl || account.verifyUrl || null,
+                            models: {}
+                        };
+                    }
 
                     // Format quotas for readability
                     const formattedQuotas = {};
@@ -386,12 +446,17 @@ app.get('/account-limits', async (req, res) => {
         // Fetch quotas for each account in parallel
         const results = await Promise.allSettled(
             allAccounts.map(async (account) => {
-                // Skip invalid accounts
-                if (account.isInvalid) {
+                // Skip permanently banned accounts
+                const isBanned = account.isInvalid && (
+                    account.invalidReason?.toLowerCase().includes('banned') ||
+                    account.invalidReason?.toLowerCase().includes('terms of service')
+                );
+                if (isBanned) {
                     return {
                         email: account.email,
-                        status: 'invalid',
+                        status: 'banned',
                         error: account.invalidReason,
+                        subscription: account.subscription || { tier: 'unknown', projectId: null },
                         models: {}
                     };
                 }
@@ -401,12 +466,61 @@ app.get('/account-limits', async (req, res) => {
 
                     // Fetch subscription tier first to get project ID
                     const subscription = await getSubscriptionTier(token);
+                    if (subscription.ineligible) {
+                        account.ineligible = subscription.ineligible;
+                        if (subscription.ineligible.validationUrl || subscription.ineligible.reasonCode === 'VALIDATION_REQUIRED') {
+                            const vUrl = subscription.ineligible.validationUrl || null;
+                            const reason = subscription.ineligible.validationErrorMessage || subscription.ineligible.reasonMessage || 'Verify your account in browser to continue.';
+                            account.verificationRequired = true;
+                            account.verificationUrl = vUrl;
+                            accountManager.markInvalid(account.email, reason, vUrl);
+                            return {
+                                email: account.email,
+                                status: 'verify',
+                                error: reason,
+                                verificationUrl: vUrl,
+                                verifyUrl: vUrl,
+                                subscription: {
+                                    tier: subscription.tier,
+                                    projectId: subscription.projectId,
+                                    detectedAt: Date.now()
+                                },
+                                models: {},
+                                quotaSummary: null
+                            };
+                        }
+                    }
 
                     // Then fetch quotas and quota summary with project ID for accurate quota info
                     const [quotas, quotaSummary] = await Promise.all([
-                        getModelQuotas(token, subscription.projectId),
-                        getUserQuotaSummary(token, subscription.projectId).catch(() => null)
+                        getModelQuotas(token, subscription.projectId).catch(() => ({})),
+                        getUserQuotaSummary(token, subscription.projectId).catch((err) => {
+                            if (err?.verificationUrl || err?.message?.includes('VALIDATION_REQUIRED')) {
+                                const vUrl = err.verificationUrl || null;
+                                account.verificationRequired = true;
+                                account.verificationUrl = vUrl;
+                                accountManager.markInvalid(account.email, 'Verify your account in browser to continue.', vUrl);
+                            }
+                            return null;
+                        })
                     ]);
+
+                    if (account.verificationRequired) {
+                        return {
+                            email: account.email,
+                            status: 'verify',
+                            error: account.invalidReason || 'Verify your account in browser to continue.',
+                            verificationUrl: account.verificationUrl || account.verifyUrl || null,
+                            verifyUrl: account.verificationUrl || account.verifyUrl || null,
+                            subscription: {
+                                tier: subscription.tier,
+                                projectId: subscription.projectId,
+                                detectedAt: Date.now()
+                            },
+                            models: {},
+                            quotaSummary: null
+                        };
+                    }
 
                     // Update account object with fresh data
                     account.subscription = {
@@ -433,6 +547,19 @@ app.get('/account-limits', async (req, res) => {
                         quotaSummary: quotaSummary
                     };
                 } catch (error) {
+                    if (error.message?.startsWith('VALIDATION_REQUIRED:')) {
+                        const vUrl = error.verificationUrl || null;
+                        accountManager.markInvalid(account.email, 'Verify your account in browser to continue.', vUrl);
+                        return {
+                            email: account.email,
+                            status: 'verify',
+                            error: 'Verify your account in browser to continue.',
+                            verificationUrl: vUrl,
+                            verifyUrl: vUrl,
+                            subscription: account.subscription || { tier: 'unknown', projectId: null },
+                            models: {}
+                        };
+                    }
                     // Detect ToS ban from quota/subscription fetch and mark account invalid
                     if (error.message?.startsWith('ACCOUNT_BANNED:')) {
                         accountManager.markInvalid(account.email, 'Account banned — Gemini disabled for Terms of Service violation');

@@ -24,7 +24,7 @@ export function supportsModel(account, modelId) {
 export function isAllRateLimited(accounts, modelId) {
     if (!modelId) return false; // No model specified = not rate limited
 
-    const eligible = accounts.filter(acc => !acc.isInvalid && acc.enabled !== false && supportsModel(acc, modelId));
+    const eligible = accounts.filter(acc => !acc.isInvalid && !acc.verificationRequired && acc.enabled !== false && supportsModel(acc, modelId));
     // Missing model entitlement is not a temporary rate limit to wait out.
     return eligible.length > 0 && eligible.every(acc => {
         const modelLimits = acc.modelRateLimits || {};
@@ -42,7 +42,7 @@ export function isAllRateLimited(accounts, modelId) {
  */
 export function getAvailableAccounts(accounts, modelId = null) {
     return accounts.filter(acc => {
-        if (acc.isInvalid) return false;
+        if (acc.isInvalid || acc.verificationRequired) return false;
 
         // WebUI: Skip disabled accounts
         if (acc.enabled === false) return false;
@@ -172,6 +172,10 @@ export function markInvalid(accounts, email, reason = 'Unknown error', verifyUrl
     account.invalidReason = reason;
     account.invalidAt = Date.now();
     account.verifyUrl = verifyUrl || null;
+    if (verifyUrl) {
+        account.verificationRequired = true;
+        account.verificationUrl = verifyUrl;
+    }
 
     logger.error(
         `[AccountManager] ⚠ Account INVALID: ${email}`
@@ -204,7 +208,11 @@ export function clearInvalid(accounts, email) {
 
     account.isInvalid = false;
     account.invalidReason = null;
+    account.invalidAt = null;
     account.verifyUrl = null;
+    account.verificationRequired = false;
+    account.verificationUrl = null;
+    account.ineligible = null;
 
     logger.info(`[AccountManager] ✓ Account re-enabled: ${email}`);
     return true;

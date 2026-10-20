@@ -225,9 +225,61 @@ async function runTests() {
         assertTrue(USER_QUOTA_SUMMARY_HEADERS['User-Agent'].includes('antigravity/cli/1.4.0'), 'Must include agy CLI user-agent');
     });
 
+    test('isValidationRequired and extractVerificationUrl detect eligibility errors and URLs', async () => {
+        const { isValidationRequired, extractVerificationUrl } = await import('../src/cloudcode/rate-limit-state.js');
+        const sampleErrorJson = JSON.stringify({
+            error: {
+                code: 403,
+                message: "Verify your account to continue.",
+                status: "PERMISSION_DENIED",
+                details: [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "VALIDATION_REQUIRED",
+                        "metadata": {
+                            "validation_url": "https://accounts.google.com/signin/continue?sarp=1&scc=1&plt=test1234"
+                        }
+                    }
+                ]
+            }
+        });
+
+        assertTrue(isValidationRequired(sampleErrorJson), 'Should detect VALIDATION_REQUIRED in JSON');
+        assertTrue(isValidationRequired('Verify your account to continue.'), 'Should detect plain text verify prompt');
+        assertEqual(
+            extractVerificationUrl(sampleErrorJson),
+            'https://accounts.google.com/signin/continue?sarp=1&scc=1&plt=test1234'
+        );
+    });
+
+    test('getAvailableAccounts excludes accounts with verificationRequired or isInvalid', async () => {
+        const { getAvailableAccounts, markInvalid, clearInvalid } = await import('../src/account-manager/rate-limits.js');
+        const accounts = [
+            { email: 'ok@example.com', enabled: true },
+            { email: 'verify@example.com', enabled: true }
+        ];
+
+        markInvalid(accounts, 'verify@example.com', 'Verify your account in browser to continue.', 'https://accounts.google.com/signin/continue?test=1');
+
+        assertEqual(accounts[1].verificationRequired, true);
+        assertEqual(accounts[1].verificationUrl, 'https://accounts.google.com/signin/continue?test=1');
+
+        const available = getAvailableAccounts(accounts);
+        assertEqual(available.length, 1);
+        assertEqual(available[0].email, 'ok@example.com');
+
+        clearInvalid(accounts, 'verify@example.com');
+        assertEqual(accounts[1].verificationRequired, false);
+        assertEqual(accounts[1].isInvalid, false);
+
+        const availableAfterClear = getAvailableAccounts(accounts);
+        assertEqual(availableAfterClear.length, 2);
+    });
+
     console.log('\n' + '='.repeat(60));
     console.log(`Results: ${passed} passed, ${failed} failed`);
     if (failed > 0) process.exit(1);
+    process.exit(0);
 }
 
 runTests().catch(err => {

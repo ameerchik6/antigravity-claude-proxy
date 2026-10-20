@@ -40,13 +40,26 @@ async function fetchAndSaveSubscription(token, account, onSave) {
 
     try {
         // Call discoverProject just to get subscription info
-        const { subscription } = await discoverProject(token, account.projectId);
+        const { subscription, ineligibility } = await discoverProject(token, account.projectId);
+        let changed = false;
         if (subscription && subscription.tier !== 'unknown') {
             account.subscription = subscription;
-            if (onSave) {
-                await onSave();
-            }
+            changed = true;
             logger.info(`[AccountManager] Updated subscription tier for ${account.email}: ${subscription.tier}`);
+        }
+        if (ineligibility) {
+            account.ineligible = ineligibility;
+            if (ineligibility.validationUrl || ineligibility.reasonCode === 'VALIDATION_REQUIRED') {
+                account.verificationRequired = true;
+                account.verificationUrl = ineligibility.validationUrl;
+                account.isInvalid = true;
+                account.invalidReason = ineligibility.validationErrorMessage || ineligibility.reasonMessage || 'Verify your account in browser to continue.';
+                account.verifyUrl = ineligibility.validationUrl;
+                changed = true;
+            }
+        }
+        if (changed && onSave) {
+            await onSave();
         }
     } catch (e) {
         logger.debug(`[AccountManager] Subscription fetch failed for ${account.email}: ${e.message}`);
@@ -197,12 +210,35 @@ export async function getProjectForAccount(account, token, projectCache, onSave 
 
     // Discover managed project, passing projectId for metadata.duetProject
     // Reference: opencode-antigravity-auth - discoverProject handles fallback internally
-    const { project, subscription } = await discoverProject(token, parts.projectId);
+    const { project, subscription, ineligibility } = await discoverProject(token, parts.projectId);
+
+    let needsSave = false;
+
+    // Apply eligibility status if returned from API
+    if (ineligibility) {
+        account.ineligible = ineligibility;
+        if (ineligibility.validationUrl || ineligibility.reasonCode === 'VALIDATION_REQUIRED') {
+            account.verificationRequired = true;
+            account.verificationUrl = ineligibility.validationUrl;
+            account.isInvalid = true;
+            account.invalidReason = ineligibility.validationErrorMessage || ineligibility.reasonMessage || 'Verify your account in browser to continue.';
+            account.verifyUrl = ineligibility.validationUrl;
+            needsSave = true;
+        }
+    } else if (account.verificationRequired) {
+        account.verificationRequired = false;
+        account.verificationUrl = null;
+        account.ineligible = null;
+        if (account.isInvalid && account.invalidReason?.includes('Verify')) {
+            account.isInvalid = false;
+            account.invalidReason = null;
+            account.verifyUrl = null;
+        }
+        needsSave = true;
+    }
 
     // Store managedProjectId back in refresh token (if we got a real project)
     if (project && project !== DEFAULT_PROJECT_ID) {
-        let needsSave = false;
-
         if (account.refreshToken) {
             // OAuth accounts: encode in refresh token
             account.refreshToken = formatRefreshParts({
@@ -231,9 +267,11 @@ export async function getProjectForAccount(account, token, projectCache, onSave 
                 logger.warn(`[AccountManager] Failed to save updated project: ${e.message}`);
             }
         }
-    } else if (subscription) {
+    } else if (subscription || needsSave) {
         // Even if no project discovered, save subscription if we got it
-        account.subscription = subscription;
+        if (subscription) {
+            account.subscription = subscription;
+        }
         if (onSave) {
             try {
                 await onSave();
@@ -252,7 +290,7 @@ export async function getProjectForAccount(account, token, projectCache, onSave 
  *
  * @param {string} token - OAuth access token
  * @param {string} [projectId] - Optional project ID from refresh token (for metadata.duetProject)
- * @returns {Promise<{project: string, subscription: {tier: string, projectId: string|null, detectedAt: string}|null}>} Project and subscription info
+ * @returns {Promise<{project: string, subscription: {tier: string, projectId: string|null, detectedAt: string}|null, ineligibility: Object|null}>} Project, subscription and ineligibility info
  */
 export async function discoverProject(token, projectId = undefined) {
     let lastError = null;
@@ -289,16 +327,17 @@ export async function discoverProject(token, projectId = undefined) {
 
             logger.debug(`[AccountManager] loadCodeAssist response from ${endpoint}:`, JSON.stringify(data));
 
-            // Extract subscription tier from response
+            // Extract subscription tier and ineligibility from response
             const subscription = extractSubscriptionFromResponse(data);
+            const ineligibility = extractIneligibilityFromResponse(data);
 
             if (typeof data.cloudaicompanionProject === 'string') {
                 logger.success(`[AccountManager] Discovered project: ${data.cloudaicompanionProject}`);
-                return { project: data.cloudaicompanionProject, subscription };
+                return { project: data.cloudaicompanionProject, subscription, ineligibility };
             }
             if (data.cloudaicompanionProject?.id) {
                 logger.success(`[AccountManager] Discovered project: ${data.cloudaicompanionProject.id}`);
-                return { project: data.cloudaicompanionProject.id, subscription };
+                return { project: data.cloudaicompanionProject.id, subscription, ineligibility };
             }
 
             // No project found - log tier data and try to onboard the user
@@ -329,7 +368,8 @@ export async function discoverProject(token, projectId = undefined) {
         if (onboardedProject) {
             logger.success(`[AccountManager] Successfully onboarded, project: ${onboardedProject}`);
             const subscription = extractSubscriptionFromResponse(loadCodeAssistData);
-            return { project: onboardedProject, subscription };
+            const ineligibility = extractIneligibilityFromResponse(loadCodeAssistData);
+            return { project: onboardedProject, subscription, ineligibility };
         }
 
         logger.warn(`[AccountManager] Onboarding failed - account may not work correctly`);
@@ -340,12 +380,42 @@ export async function discoverProject(token, projectId = undefined) {
         logger.warn(`[AccountManager] loadCodeAssist failed for all endpoints: ${lastError}`);
     }
 
+    const ineligibility = extractIneligibilityFromResponse(loadCodeAssistData);
+
     // Fallback: use projectId if available, otherwise use default
     // Reference: opencode-antigravity-auth/src/plugin/project.ts
     if (projectId) {
-        return { project: projectId, subscription: null };
+        return { project: projectId, subscription: null, ineligibility };
     }
-    return { project: DEFAULT_PROJECT_ID, subscription: null };
+    return { project: DEFAULT_PROJECT_ID, subscription: null, ineligibility };
+}
+
+/**
+ * Extract ineligibility info (validation_url, etc.) from loadCodeAssist response
+ * Matches Antigravity CLI logic from ValidateAndOnboardAccount
+ *
+ * @param {Object} data - loadCodeAssist response data
+ * @returns {{reasonCode: string, reasonMessage: string, validationUrl: string|null, validationErrorMessage: string|null, validationLearnMoreUrl: string|null}|null}
+ */
+function extractIneligibilityFromResponse(data) {
+    if (!data || !Array.isArray(data.ineligibleTiers) || data.ineligibleTiers.length === 0) {
+        return null;
+    }
+    const matched = data.ineligibleTiers.find(t =>
+        t?.reasonCode === 'VALIDATION_REQUIRED' ||
+        t?.tierId === 'free-tier' ||
+        t?.validationUrl
+    ) || data.ineligibleTiers[0];
+
+    if (!matched) return null;
+
+    return {
+        reasonCode: matched.reasonCode || 'INELIGIBLE',
+        reasonMessage: matched.reasonMessage || matched.validationErrorMessage || 'Eligibility check failed',
+        validationUrl: matched.validationUrl || null,
+        validationErrorMessage: matched.validationErrorMessage || null,
+        validationLearnMoreUrl: matched.validationLearnMoreUrl || null
+    };
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { throttledFetch } from '../utils/helpers.js';
+import { isValidationRequired, extractVerificationUrl } from './rate-limit-state.js';
 
 // Catalogs are account-specific: rollouts can expose different model IDs.
 const modelCache = new WeakMap();
@@ -115,6 +116,12 @@ export async function fetchAvailableModels(token, projectId = null) {
                     if (lower.includes('has been disabled') && lower.includes('violation of terms of service')) {
                         throw new Error(`ACCOUNT_BANNED: ${errorText}`);
                     }
+                    if (isValidationRequired(errorText)) {
+                        const verifyUrl = extractVerificationUrl(errorText);
+                        const err = new Error(`VALIDATION_REQUIRED: ${errorText}`);
+                        err.verificationUrl = verifyUrl;
+                        throw err;
+                    }
                 }
                 // Detect payment required error – provide clear guidance
                 if (response.status === 402) {
@@ -128,6 +135,7 @@ export async function fetchAvailableModels(token, projectId = null) {
 
             return await response.json();
         } catch (error) {
+            if (error.message?.startsWith('ACCOUNT_BANNED:') || error.message?.startsWith('VALIDATION_REQUIRED:')) throw error;
             logger.warn(`[CloudCode] fetchAvailableModels failed at ${endpoint}:`, error.message);
         }
     }
@@ -198,13 +206,19 @@ export async function getUserQuotaSummary(token, projectId = null) {
                     if (lower.includes('has been disabled') && lower.includes('violation of terms of service')) {
                         throw new Error(`ACCOUNT_BANNED: ${errorText}`);
                     }
+                    if (isValidationRequired(errorText)) {
+                        const verifyUrl = extractVerificationUrl(errorText);
+                        const err = new Error(`VALIDATION_REQUIRED: ${errorText}`);
+                        err.verificationUrl = verifyUrl;
+                        throw err;
+                    }
                 }
                 continue;
             }
 
             return await response.json();
         } catch (error) {
-            if (error.message?.startsWith('ACCOUNT_BANNED:')) throw error;
+            if (error.message?.startsWith('ACCOUNT_BANNED:') || error.message?.startsWith('VALIDATION_REQUIRED:')) throw error;
             logger.warn(`[CloudCode] retrieveUserQuotaSummary failed at ${endpoint}:`, error.message);
         }
     }
@@ -272,6 +286,12 @@ export async function getSubscriptionTier(token) {
                     if (lower.includes('has been disabled') && lower.includes('violation of terms of service')) {
                         throw new Error(`ACCOUNT_BANNED: ${errorText}`);
                     }
+                    if (isValidationRequired(errorText)) {
+                        const verifyUrl = extractVerificationUrl(errorText);
+                        const err = new Error(`VALIDATION_REQUIRED: ${errorText}`);
+                        err.verificationUrl = verifyUrl;
+                        throw err;
+                    }
                 }
                 continue;
             }
@@ -287,6 +307,26 @@ export async function getSubscriptionTier(token) {
                 projectId = data.cloudaicompanionProject;
             } else if (data.cloudaicompanionProject?.id) {
                 projectId = data.cloudaicompanionProject.id;
+            }
+
+            // Extract eligibility info (ineligible_tiers from onboarding.proto)
+            let ineligible = null;
+            if (Array.isArray(data.ineligibleTiers) && data.ineligibleTiers.length > 0) {
+                const matched = data.ineligibleTiers.find(t =>
+                    t?.reasonCode === 'VALIDATION_REQUIRED' ||
+                    t?.tierId === 'free-tier' ||
+                    t?.validationUrl
+                ) || data.ineligibleTiers[0];
+
+                if (matched) {
+                    ineligible = {
+                        reasonCode: matched.reasonCode || 'INELIGIBLE',
+                        reasonMessage: matched.reasonMessage || matched.validationErrorMessage || 'Account is not eligible',
+                        validationUrl: matched.validationUrl || null,
+                        validationErrorMessage: matched.validationErrorMessage || null,
+                        validationLearnMoreUrl: matched.validationLearnMoreUrl || null
+                    };
+                }
             }
 
             // Extract subscription tier
@@ -329,8 +369,9 @@ export async function getSubscriptionTier(token) {
 
             logger.debug(`[CloudCode] Subscription detected: ${tier} (tierId: ${tierId}, source: ${tierSource}), Project: ${projectId}`);
 
-            return { tier, projectId };
+            return { tier, projectId, ineligible };
         } catch (error) {
+            if (error.message?.startsWith('ACCOUNT_BANNED:') || error.message?.startsWith('VALIDATION_REQUIRED:')) throw error;
             logger.warn(`[CloudCode] loadCodeAssist failed at ${endpoint}:`, error.message);
         }
     }

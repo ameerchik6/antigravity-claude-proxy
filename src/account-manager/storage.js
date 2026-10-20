@@ -32,9 +32,11 @@ export async function loadAccounts(configPath = ACCOUNT_CONFIG_PATH) {
             enabled: acc.enabled !== false, // Default to true if not specified
             // Reset invalid flag on startup - give accounts a fresh chance
             // EXCEPT accounts with a verifyUrl — those need user intervention
-            isInvalid: acc.verifyUrl ? (acc.isInvalid || false) : false,
-            invalidReason: acc.verifyUrl ? (acc.invalidReason || null) : null,
-            verifyUrl: acc.verifyUrl || null,
+            isInvalid: (acc.verifyUrl || acc.verificationUrl) ? (acc.isInvalid || false) : false,
+            invalidReason: (acc.verifyUrl || acc.verificationUrl) ? (acc.invalidReason || null) : null,
+            verifyUrl: acc.verifyUrl || acc.verificationUrl || null,
+            verificationRequired: acc.verificationRequired || !!acc.verifyUrl || !!acc.verificationUrl || false,
+            verificationUrl: acc.verificationUrl || acc.verifyUrl || null,
             agyTokenPath: acc.agyTokenPath || undefined,
             modelRateLimits: acc.modelRateLimits || {},
             // New fields for subscription and quota tracking
@@ -138,7 +140,9 @@ export async function saveAccounts(configPath, accounts, settings, activeIndex) 
                 addedAt: acc.addedAt || undefined,
                 isInvalid: acc.isInvalid || false,
                 invalidReason: acc.invalidReason || null,
-                verifyUrl: acc.verifyUrl || null,
+                verifyUrl: acc.verifyUrl || acc.verificationUrl || null,
+                verificationRequired: acc.verificationRequired || !!acc.verifyUrl || !!acc.verificationUrl || false,
+                verificationUrl: acc.verificationUrl || acc.verifyUrl || null,
                 modelRateLimits: acc.modelRateLimits || {},
                 lastUsed: acc.lastUsed,
                 subscription: acc.subscription || { tier: 'unknown', projectId: null, detectedAt: null },

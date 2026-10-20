@@ -130,7 +130,8 @@
 
                 <!-- Account Rows -->
                 <template x-for="acc in filteredAccounts" :key="acc.email">
-                    <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors group">
+                    <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors group"
+                        :class="{ 'bg-amber-950/10': acc.status === 'verify' }">
                         <td class="pl-6 py-4">
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" class="sr-only peer"
@@ -144,6 +145,10 @@
                                 <span class="font-mono text-sm text-gray-300 truncate max-w-[320px] inline-block cursor-help group-hover:text-white transition-colors"
                                       x-text="formatEmail(Redact.email(acc.email))">
                                 </span>
+                            </div>
+                            <div x-show="acc.status === 'verify'"
+                                 class="text-[11px] text-amber-500 font-mono mt-0.5"
+                                 x-text="acc.error || 'Подтвердите аккаунт, чтобы продолжить'">
                             </div>
                         </td>
                         <td class="py-4">
@@ -204,28 +209,43 @@
                             </div>
                         </td>
                         <td class="py-4">
-                            <div class="flex items-center gap-2">
-                                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                                     :class="acc.status === 'ok' ?
-                                             'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' :
-                                             (acc.status === 'banned' ? 
-                                              'bg-red-800 shadow-[0_0_8px_rgba(153,27,27,0.6)]' :
-                                              'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]')">
+                            <template x-if="acc.status === 'verify'">
+                                <a :href="acc.verificationUrl || acc.verifyUrl"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/40 text-amber-400 hover:bg-amber-900/60 hover:border-amber-400 transition-all cursor-pointer group/verify shadow-sm"
+                                   title="Перейти к верификации в браузере">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] animate-pulse"></span>
+                                    <span class="text-xs font-mono font-semibold tracking-wider">VERIFY</span>
+                                    <svg class="w-3 h-3 text-amber-400/80 group-hover/verify:text-amber-200 group-hover/verify:translate-x-0.5 group-hover/verify:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                </a>
+                            </template>
+                            <template x-if="acc.status !== 'verify'">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                         :class="acc.status === 'ok' ?
+                                                 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' :
+                                                 (acc.status === 'banned' ?
+                                                  'bg-red-800 shadow-[0_0_8px_rgba(153,27,27,0.6)]' :
+                                                  'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]')">
+                                    </div>
+                                    <span class="text-xs font-mono font-semibold"
+                                          :class="acc.status === 'ok' ? 'text-neon-green' : (acc.status === 'banned' ? 'text-red-800' : 'text-red-400')"
+                                          x-text="acc.status.toUpperCase()">
+                                    </span>
+                                    <p x-show="acc.status === 'banned'"
+                                       class="text-[9px] text-red-600/70 mt-0.5 max-w-[200px] leading-tight"
+                                       x-text="acc.error || 'Gemini disabled for ToS violation'">
+                                    </p>
                                 </div>
-                                <span class="text-xs font-mono font-semibold"
-                                      :class="acc.status === 'ok' ? 'text-neon-green' : (acc.status === 'banned' ? 'text-red-800' : 'text-red-400')"
-                                      x-text="acc.status.toUpperCase()">
-                                </span>
-                                <p x-show="acc.status === 'banned'" 
-                                   class="text-[9px] text-red-600/70 mt-0.5 max-w-[200px] leading-tight"
-                                   x-text="acc.error || 'Gemini disabled for ToS violation'">
-                                </p>
-                            </div>
+                            </template>
                         </td>
                         <td class="py-4 pr-6">
                             <div class="flex justify-end gap-2">
                                 <!-- Fix Button -->
-                                <button x-show="acc.status === 'invalid'"
+                                <button x-show="acc.status === 'invalid' && !acc.verificationUrl && !acc.verifyUrl"
                                     class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 transition-all"
                                     @click="fixAccount(acc.email)"
                                     x-text="$store.global.t('fix')">
