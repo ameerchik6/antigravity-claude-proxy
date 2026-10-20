@@ -1,6 +1,73 @@
 <div x-data="accountManager" class="view-container">
-    <!-- Compact Header -->
-    <div class="flex items-center justify-between gap-4 mb-6">
+    <!-- Mobile Header (matches Mobile Cards mockup) -->
+    <div class="md:hidden space-y-3.5 mb-5">
+        <div>
+            <h1 class="text-2xl font-bold text-white tracking-tight" x-text="$store.global.t('accountManagement')">
+                Account Management
+            </h1>
+            <p class="text-xs text-gray-400 font-mono mt-1" x-text="$store.global.t('manageTokens')">
+                Manage Google account tokens and authorization states
+            </p>
+        </div>
+
+        <!-- Mobile Search Input -->
+        <div class="relative w-full" x-show="$store.data.accounts.length > 0">
+            <input type="text"
+                   x-model="searchQuery"
+                   :placeholder="$store.global.t('searchAccounts') || 'Search accounts...'"
+                   class="w-full bg-[#121217] border border-space-border/60 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-neon-purple transition-colors"
+                   @keydown.escape="searchQuery = ''">
+            <svg class="w-4 h-4 absolute left-3.5 top-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+
+        <!-- Mobile Actions Row: Add Account button + 3 square icon buttons -->
+        <div class="flex items-center gap-2 w-full">
+            <button class="flex-1 h-11 bg-neon-purple hover:bg-purple-600 border-none text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-neon-purple/20 transition-all"
+                :class="{ 'opacity-50 cursor-not-allowed': $store.data.accounts.length >= $store.data.maxAccounts }"
+                :disabled="$store.data.accounts.length >= $store.data.maxAccounts"
+                @click="$store.data.accounts.length < $store.data.maxAccounts && document.getElementById('add_account_modal').showModal()">
+                <span class="text-base font-bold">+</span>
+                <span x-text="$store.global.t('addAccount')">Add Account</span>
+            </button>
+
+            <!-- Export -->
+            <button class="w-11 h-11 rounded-xl bg-[#121217] border border-space-border/60 text-gray-400 hover:text-white transition-all flex items-center justify-center flex-shrink-0"
+                @click="exportAccounts()"
+                x-show="$store.data.accounts.length > 0"
+                :title="$store.global.t('exportAccounts') || 'Export Accounts'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+            </button>
+
+            <!-- Import -->
+            <label class="w-11 h-11 rounded-xl bg-[#121217] border border-space-border/60 text-gray-400 hover:text-white transition-all flex items-center justify-center flex-shrink-0 cursor-pointer"
+                :title="$store.global.t('importAccounts') || 'Import Accounts'">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <input type="file" accept=".json" class="hidden" @change="importAccounts($event)">
+            </label>
+
+            <!-- Reload -->
+            <button class="w-11 h-11 rounded-xl bg-[#121217] border border-space-border/60 text-gray-400 hover:text-white transition-all flex items-center justify-center flex-shrink-0"
+                @click="reloadAccounts()"
+                :disabled="reloading"
+                :title="$store.global.t('reload')">
+                <svg xmlns="http://www.w3.org/2000/svg"
+                     class="w-4 h-4 transition-transform"
+                     :class="{ 'animate-spin': reloading }"
+                     fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Desktop Header -->
+    <div class="hidden md:flex items-center justify-between gap-4 mb-6">
         <!-- Title with inline subtitle -->
         <div class="flex flex-wrap items-center gap-4">
             <h1 class="text-2xl font-bold text-white tracking-tight" x-text="$store.global.t('accountManagement')">
@@ -80,8 +147,8 @@
         </div>
     </div>
 
-    <!-- Table Card -->
-    <div class="view-card !p-0">
+    <!-- Desktop Table View -->
+    <div class="hidden md:block view-card !p-0">
         <table class="w-full">
             <thead x-show="$store.data.accounts.length > 0">
                 <tr class="bg-space-900/50 border-b border-space-border/50">
@@ -312,6 +379,188 @@
                 </template>
             </tbody>
         </table>
+    </div>
+
+    <!-- Mobile Cards View (matches Mobile Cards mockup) -->
+    <div class="md:hidden space-y-3.5">
+        <!-- Empty State -->
+        <template x-if="$store.data.accounts.length === 0">
+            <div class="rounded-2xl p-8 text-center bg-[#121217] border border-space-border/60">
+                <svg class="w-16 h-16 text-gray-700 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <h3 class="text-lg font-semibold text-gray-300" x-text="$store.global.t('noAccountsYet')">
+                    No Accounts Yet
+                </h3>
+                <p class="text-xs text-gray-500 mt-1 mb-4" x-text="$store.global.t('noAccountsDesc')">
+                    Get started by adding a Google account via OAuth.
+                </p>
+                <button class="btn bg-neon-purple hover:bg-purple-600 border-none text-white btn-sm gap-2 shadow-lg shadow-neon-purple/20"
+                    onclick="document.getElementById('add_account_modal').showModal()">
+                    <span x-text="$store.global.t('addFirstAccount')">Add Your First Account</span>
+                </button>
+            </div>
+        </template>
+
+        <!-- No Search Results -->
+        <template x-if="$store.data.accounts.length > 0 && filteredAccounts.length === 0">
+            <div class="rounded-2xl p-8 text-center bg-[#121217] border border-space-border/60">
+                <p class="text-sm text-gray-400 mb-2" x-text="$store.global.t('noSearchResults')">No accounts match your search</p>
+                <button class="btn-action-ghost !text-gray-400" @click="searchQuery = ''" x-text="$store.global.t('clearSearch')">Clear Search</button>
+            </div>
+        </template>
+
+        <!-- Account Cards -->
+        <template x-for="acc in filteredAccounts" :key="acc.email">
+            <div class="rounded-2xl p-4 transition-all border"
+                 :class="acc.status === 'verify' ? 'bg-[#181308] border-amber-900/60 shadow-lg shadow-amber-950/20' : 'bg-[#121217] border-space-border/60'">
+
+                <!-- Top Row: Switch + Email + Quick Actions -->
+                <div class="flex items-center justify-between gap-3 mb-2.5">
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        <!-- Toggle switch -->
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                            <input type="checkbox" class="sr-only peer"
+                                :checked="acc.enabled !== false"
+                                @change="toggleAccount(acc.email, $el.checked)">
+                            <div class="w-9 h-5 bg-space-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-gray-600 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-neon-green peer-checked:after:bg-white"></div>
+                        </label>
+                        <!-- Email -->
+                        <span class="font-mono text-sm font-semibold text-gray-200 truncate"
+                              x-text="formatEmail(Redact.email(acc.email))"
+                              :title="Redact.email(acc.email)">
+                        </span>
+                    </div>
+
+                    <!-- Quick Actions: Settings & Delete -->
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <button class="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-neon-yellow transition-colors"
+                                @click="openThresholdModal(acc)"
+                                title="Account Settings">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                        <button class="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-red-400 transition-colors"
+                                :class="acc.source === 'database' ? 'text-gray-700 cursor-not-allowed' : ''"
+                                :disabled="acc.source === 'database'"
+                                @click="acc.source !== 'database' && confirmDeleteAccount(acc.email)"
+                                :title="acc.source === 'database' ? $store.global.t('cannotDeleteDatabase') : $store.global.t('delete')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Badges Row: Source + Tier (left) and Status (right) -->
+                <div class="flex items-center justify-between gap-2 mb-3">
+                    <div class="flex items-center gap-1.5">
+                        <!-- Source Badge -->
+                        <span class="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold tracking-wider"
+                              :class="acc.source === 'oauth' ? 'bg-purple-950/60 border border-purple-500/30 text-purple-300' : 'bg-gray-800 border border-gray-700 text-gray-400'"
+                              x-text="(acc.source || 'oauth').toUpperCase()">
+                        </span>
+                        <!-- Tier Badge -->
+                        <span class="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold tracking-wider"
+                              :class="{
+                                  'bg-purple-950/60 border border-purple-500/30 text-purple-300': acc.subscription?.tier === 'ultra',
+                                  'bg-blue-950/60 border border-blue-500/30 text-blue-300': acc.subscription?.tier === 'pro',
+                                  'bg-gray-800 border border-gray-700 text-gray-400': !acc.subscription || acc.subscription.tier === 'free' || acc.subscription.tier === 'unknown'
+                              }"
+                              x-text="(acc.subscription?.tier || 'free').toUpperCase()">
+                        </span>
+                    </div>
+
+                    <!-- Status Indicator -->
+                    <div>
+                        <template x-if="acc.status === 'ok'">
+                            <div class="flex items-center gap-1.5 text-xs font-mono font-semibold text-neon-green">
+                                <span class="w-1.5 h-1.5 rounded-full bg-neon-green shadow-[0_0_6px_rgba(34,197,94,0.8)]"></span>
+                                <span>OK</span>
+                            </div>
+                        </template>
+                        <template x-if="acc.status === 'verify'">
+                            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-400 text-xs font-mono font-bold tracking-wider">
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                                <span>VERIFY</span>
+                            </div>
+                        </template>
+                        <template x-if="acc.status === 'banned'">
+                            <div class="flex items-center gap-1.5 text-xs font-mono font-semibold text-red-500">
+                                <span class="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                                <span>BANNED</span>
+                            </div>
+                        </template>
+                        <template x-if="acc.status === 'invalid' || acc.status === 'error'">
+                            <div class="flex items-center gap-1.5 text-xs font-mono font-semibold text-red-400">
+                                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                <span x-text="acc.status.toUpperCase()"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Normal Quotas View (when status is NOT verify) -->
+                <template x-if="acc.status !== 'verify'">
+                    <div x-data="{ get qg() { return getAccountGroupQuotas(acc); } }"
+                         @click="openQuotaModal(acc)"
+                         class="grid grid-cols-2 gap-4 cursor-pointer pt-0.5">
+                        <!-- Gemini Bar -->
+                        <div>
+                            <div class="flex justify-between items-center text-[10px] font-mono mb-1">
+                                <span class="text-gray-400">Gemini</span>
+                                <span class="font-mono text-[11px]"
+                                      :class="qg.gemini.percent !== null ? (qg.gemini.percent > 50 ? 'text-neon-green' : (qg.gemini.percent > 20 ? 'text-yellow-500' : 'text-red-500')) : 'text-gray-600'"
+                                      x-text="qg.gemini.percent !== null ? qg.gemini.percent + '%' : '-'">
+                                </span>
+                            </div>
+                            <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                                <div class="h-full rounded-full transition-all duration-300"
+                                     :class="qg.gemini.percent > 50 ? 'bg-neon-green' : (qg.gemini.percent > 20 ? 'bg-yellow-500' : 'bg-red-500')"
+                                     :style="`width: ${qg.gemini.percent ?? 0}%`">
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Claude / GPT Bar -->
+                        <div>
+                            <div class="flex justify-between items-center text-[10px] font-mono mb-1">
+                                <span class="text-gray-400">Claude / GPT</span>
+                                <span class="font-mono text-[11px]"
+                                      :class="qg.claude.percent !== null ? (qg.claude.percent > 50 ? 'text-neon-green' : (qg.claude.percent > 20 ? 'text-yellow-500' : 'text-red-500')) : 'text-gray-600'"
+                                      x-text="qg.claude.percent !== null ? qg.claude.percent + '%' : '-'">
+                                </span>
+                            </div>
+                            <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                                <div class="h-full rounded-full transition-all duration-300"
+                                     :class="qg.claude.percent > 50 ? 'bg-neon-green' : (qg.claude.percent > 20 ? 'bg-yellow-500' : 'bg-red-500')"
+                                     :style="`width: ${qg.claude.percent ?? 0}%`">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Verify Status View: message + large amber button (matches Mobile Cards mockup) -->
+                <template x-if="acc.status === 'verify'">
+                    <div class="pt-0.5 space-y-3">
+                        <div class="text-xs font-mono text-amber-400"
+                             x-text="acc.error || 'Verify your account to continue'">
+                        </div>
+                        <a :href="acc.verificationUrl || acc.verifyUrl"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all font-mono">
+                            <span>Verify account</span>
+                            <span class="text-base font-bold">↗</span>
+                        </a>
+                    </div>
+                </template>
+            </div>
+        </template>
     </div>
 
     <!-- Account Status Info -->
