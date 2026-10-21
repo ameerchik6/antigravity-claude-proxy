@@ -8,7 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { sendMessage, sendMessageStream, listModels, getModelQuotas, getUserQuotaSummary, getSubscriptionTier, isValidModel } from './cloudcode/index.js';
+import { sendMessage, sendMessageStream, listModels, getModelQuotas, getUserQuotaSummary, getSubscriptionTier, isValidModel, extractVerificationUrl, extractAppealUrl } from './cloudcode/index.js';
 import { mountWebUI } from './webui/index.js';
 import { config } from './config.js';
 
@@ -294,7 +294,8 @@ app.get('/health', async (req, res) => {
                     return {
                         ...baseInfo,
                         status: 'banned',
-                        error: account.invalidReason,
+                        error: account.invalidReason || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.',
+                        appealUrl: account.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9',
                         models: {}
                     };
                 }
@@ -455,7 +456,8 @@ app.get('/account-limits', async (req, res) => {
                     return {
                         email: account.email,
                         status: 'banned',
-                        error: account.invalidReason,
+                        error: account.invalidReason || 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.',
+                        appealUrl: account.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9',
                         subscription: account.subscription || { tier: 'unknown', projectId: null },
                         models: {}
                     };
@@ -562,11 +564,15 @@ app.get('/account-limits', async (req, res) => {
                     }
                     // Detect ToS ban from quota/subscription fetch and mark account invalid
                     if (error.message?.startsWith('ACCOUNT_BANNED:')) {
-                        accountManager.markInvalid(account.email, 'Account banned — Gemini disabled for Terms of Service violation');
+                        const rawMsg = error.message.replace(/^ACCOUNT_BANNED:\s*/, '');
+                        const appealUrl = error.appealUrl || extractAppealUrl(rawMsg) || 'https://forms.gle/hGzM9MEUv2azZsrb9';
+                        const banReason = 'This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.';
+                        accountManager.markInvalid(account.email, banReason, null, appealUrl);
                         return {
                             email: account.email,
                             status: 'banned',
-                            error: 'Account banned — Gemini disabled for Terms of Service violation',
+                            error: banReason,
+                            appealUrl,
                             subscription: account.subscription || { tier: 'unknown', projectId: null },
                             models: {}
                         };

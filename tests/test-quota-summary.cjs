@@ -276,6 +276,23 @@ async function runTests() {
         assertEqual(availableAfterClear.length, 2);
     });
 
+    test('isAccountBanned and extractAppealUrl detect ToS ban errors and extract appeal URL', async () => {
+        const { isAccountBanned, extractAppealUrl } = await import('../src/cloudcode/rate-limit-state.js');
+        const sampleBannedError = 'Eligibility check failed: PERMISSION_DENIED (code 403): This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.\n\nSubmit Appeal:\nhttps://forms.gle/hGzM9MEUv2azZsrb9';
+
+        assertTrue(isAccountBanned(sampleBannedError), 'Should detect ToS ban');
+        assertEqual(
+            extractAppealUrl(sampleBannedError),
+            'https://forms.gle/hGzM9MEUv2azZsrb9'
+        );
+
+        // Fallback default
+        assertEqual(
+            extractAppealUrl(''),
+            'https://forms.gle/hGzM9MEUv2azZsrb9'
+        );
+    });
+
     console.log('\n' + '='.repeat(60));
     console.log(`Results: ${passed} passed, ${failed} failed`);
     if (failed > 0) process.exit(1);

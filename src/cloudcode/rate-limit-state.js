@@ -155,7 +155,43 @@ export function extractVerificationUrl(errorText) {
  */
 export function isAccountBanned(errorText) {
     const lower = (errorText || '').toLowerCase();
-    return lower.includes('has been disabled') && lower.includes('violation of terms of service');
+    return (lower.includes('has been disabled') && lower.includes('violation of terms of service')) ||
+           lower.includes('service has been disabled') ||
+           (lower.includes('terms of service') && lower.includes('appeal'));
+}
+
+/**
+ * Extract the appeal URL from a banned account error message.
+ * When an account is disabled for ToS violation, Google returns a link to submit an appeal (e.g. forms.gle or support form).
+ * @param {string} errorText - Error message from the API
+ * @returns {string} The appeal URL (or default Google appeal form URL)
+ */
+export function extractAppealUrl(errorText) {
+    const defaultAppealUrl = 'https://forms.gle/hGzM9MEUv2azZsrb9';
+    if (!errorText) return defaultAppealUrl;
+    try {
+        const parsed = JSON.parse(errorText);
+        const details = parsed?.error?.details || [];
+        for (const detail of details) {
+            if (detail?.metadata?.appeal_url) {
+                return detail.metadata.appeal_url;
+            }
+            if (Array.isArray(detail?.links)) {
+                const link = detail.links.find(l =>
+                    /appeal|terms|violation|forms\.gle/i.test(l?.description || '') ||
+                    /forms\.gle|google\.com/i.test(l?.url || '')
+                );
+                if (link?.url) return link.url;
+            }
+        }
+    } catch {
+        // Fall through to regex
+    }
+    const match = errorText.match(/https:\/\/(?:forms\.gle|support\.google\.com|accounts\.google\.com)[^\s"'\\]+/i);
+    if (match) {
+        return match[0].replace(/[,.)}>\]]+$/, '');
+    }
+    return defaultAppealUrl;
 }
 
 /**

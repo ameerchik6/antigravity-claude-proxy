@@ -18,7 +18,7 @@ import {
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { throttledFetch } from '../utils/helpers.js';
-import { isValidationRequired, extractVerificationUrl } from './rate-limit-state.js';
+import { isValidationRequired, extractVerificationUrl, isAccountBanned, extractAppealUrl } from './rate-limit-state.js';
 
 // Catalogs are account-specific: rollouts can expose different model IDs.
 const modelCache = new WeakMap();
@@ -112,9 +112,11 @@ export async function fetchAvailableModels(token, projectId = null) {
                 logger.warn(`[CloudCode] fetchAvailableModels error at ${endpoint}: ${response.status}`);
                 // Detect permanent ToS ban — no point trying other endpoints
                 if (response.status === 403) {
-                    const lower = (errorText || '').toLowerCase();
-                    if (lower.includes('has been disabled') && lower.includes('violation of terms of service')) {
-                        throw new Error(`ACCOUNT_BANNED: ${errorText}`);
+                    if (isAccountBanned(errorText)) {
+                        const appealUrl = extractAppealUrl(errorText);
+                        const err = new Error(`ACCOUNT_BANNED: ${errorText}`);
+                        err.appealUrl = appealUrl;
+                        throw err;
                     }
                     if (isValidationRequired(errorText)) {
                         const verifyUrl = extractVerificationUrl(errorText);
@@ -202,9 +204,11 @@ export async function getUserQuotaSummary(token, projectId = null) {
                 const errorText = await response.text().catch(() => '');
                 logger.warn(`[CloudCode] retrieveUserQuotaSummary error at ${endpoint}: ${response.status}`);
                 if (response.status === 403) {
-                    const lower = (errorText || '').toLowerCase();
-                    if (lower.includes('has been disabled') && lower.includes('violation of terms of service')) {
-                        throw new Error(`ACCOUNT_BANNED: ${errorText}`);
+                    if (isAccountBanned(errorText)) {
+                        const appealUrl = extractAppealUrl(errorText);
+                        const err = new Error(`ACCOUNT_BANNED: ${errorText}`);
+                        err.appealUrl = appealUrl;
+                        throw err;
                     }
                     if (isValidationRequired(errorText)) {
                         const verifyUrl = extractVerificationUrl(errorText);
@@ -282,9 +286,11 @@ export async function getSubscriptionTier(token) {
                 logger.warn(`[CloudCode] loadCodeAssist error at ${endpoint}: ${response.status}`);
                 // Detect permanent ToS ban — no point trying other endpoints
                 if (response.status === 403) {
-                    const lower = (errorText || '').toLowerCase();
-                    if (lower.includes('has been disabled') && lower.includes('violation of terms of service')) {
-                        throw new Error(`ACCOUNT_BANNED: ${errorText}`);
+                    if (isAccountBanned(errorText)) {
+                        const appealUrl = extractAppealUrl(errorText);
+                        const err = new Error(`ACCOUNT_BANNED: ${errorText}`);
+                        err.appealUrl = appealUrl;
+                        throw err;
                     }
                     if (isValidationRequired(errorText)) {
                         const verifyUrl = extractVerificationUrl(errorText);

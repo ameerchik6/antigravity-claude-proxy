@@ -164,7 +164,7 @@ export function markRateLimited(accounts, email, resetMs = null, modelId) {
  * @param {string|null} verifyUrl - Optional verification URL (for 403 VALIDATION_REQUIRED)
  * @returns {boolean} True if account was found and marked
  */
-export function markInvalid(accounts, email, reason = 'Unknown error', verifyUrl = null) {
+export function markInvalid(accounts, email, reason = 'Unknown error', verifyUrl = null, appealUrl = null) {
     const account = accounts.find(a => a.email === email);
     if (!account) return false;
 
@@ -176,6 +176,11 @@ export function markInvalid(accounts, email, reason = 'Unknown error', verifyUrl
         account.verificationRequired = true;
         account.verificationUrl = verifyUrl;
     }
+    if (appealUrl) {
+        account.appealUrl = appealUrl;
+    } else if (reason?.toLowerCase().includes('terms of service') || reason?.toLowerCase().includes('banned')) {
+        account.appealUrl = 'https://forms.gle/hGzM9MEUv2azZsrb9';
+    }
 
     logger.error(
         `[AccountManager] ⚠ Account INVALID: ${email}`
@@ -186,6 +191,11 @@ export function markInvalid(accounts, email, reason = 'Unknown error', verifyUrl
     if (verifyUrl) {
         logger.error(
             `[AccountManager]   Verification URL: ${verifyUrl}`
+        );
+    }
+    if (account.appealUrl) {
+        logger.error(
+            `[AccountManager]   Appeal URL: ${account.appealUrl}`
         );
     }
     logger.error(
@@ -212,6 +222,7 @@ export function clearInvalid(accounts, email) {
     account.verifyUrl = null;
     account.verificationRequired = false;
     account.verificationUrl = null;
+    account.appealUrl = null;
     account.ineligible = null;
 
     logger.info(`[AccountManager] ✓ Account re-enabled: ${email}`);

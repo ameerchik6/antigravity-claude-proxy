@@ -31,12 +31,13 @@ export async function loadAccounts(configPath = ACCOUNT_CONFIG_PATH) {
             lastUsed: acc.lastUsed || null,
             enabled: acc.enabled !== false, // Default to true if not specified
             // Reset invalid flag on startup - give accounts a fresh chance
-            // EXCEPT accounts with a verifyUrl — those need user intervention
-            isInvalid: (acc.verifyUrl || acc.verificationUrl) ? (acc.isInvalid || false) : false,
-            invalidReason: (acc.verifyUrl || acc.verificationUrl) ? (acc.invalidReason || null) : null,
+            // EXCEPT accounts with a verifyUrl or appealUrl or banned reason — those need user intervention
+            isInvalid: (acc.verifyUrl || acc.verificationUrl || acc.appealUrl || acc.invalidReason?.toLowerCase().includes('terms of service')) ? (acc.isInvalid || false) : false,
+            invalidReason: (acc.verifyUrl || acc.verificationUrl || acc.appealUrl || acc.invalidReason?.toLowerCase().includes('terms of service')) ? (acc.invalidReason || null) : null,
             verifyUrl: acc.verifyUrl || acc.verificationUrl || null,
             verificationRequired: acc.verificationRequired || !!acc.verifyUrl || !!acc.verificationUrl || false,
             verificationUrl: acc.verificationUrl || acc.verifyUrl || null,
+            appealUrl: acc.appealUrl || (acc.invalidReason?.toLowerCase().includes('terms of service') ? 'https://forms.gle/hGzM9MEUv2azZsrb9' : null),
             agyTokenPath: acc.agyTokenPath || undefined,
             modelRateLimits: acc.modelRateLimits || {},
             // New fields for subscription and quota tracking
@@ -143,6 +144,7 @@ export async function saveAccounts(configPath, accounts, settings, activeIndex) 
                 verifyUrl: acc.verifyUrl || acc.verificationUrl || null,
                 verificationRequired: acc.verificationRequired || !!acc.verifyUrl || !!acc.verificationUrl || false,
                 verificationUrl: acc.verificationUrl || acc.verifyUrl || null,
+                appealUrl: acc.appealUrl || undefined,
                 modelRateLimits: acc.modelRateLimits || {},
                 lastUsed: acc.lastUsed,
                 subscription: acc.subscription || { tier: 'unknown', projectId: null, detectedAt: null },

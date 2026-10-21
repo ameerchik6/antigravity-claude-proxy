@@ -13,6 +13,7 @@
 export { sendMessage } from './message-handler.js';
 export { sendMessageStream } from './streaming-handler.js';
 export { listModels, fetchAvailableModels, getModelQuotas, getUserQuotaSummary, getSubscriptionTier, isValidModel } from './model-api.js';
+export { isValidationRequired, extractVerificationUrl, isAccountBanned, extractAppealUrl } from './rate-limit-state.js';
 
 // Default export for backwards compatibility
 import { sendMessage } from './message-handler.js';

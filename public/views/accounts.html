@@ -198,7 +198,7 @@
                 <!-- Account Rows -->
                 <template x-for="acc in filteredAccounts" :key="acc.email">
                     <tr class="border-b border-space-border/30 last:border-0 hover:bg-white/5 transition-colors group"
-                        :class="{ 'bg-amber-950/10': acc.status === 'verify' }">
+                        :class="{ 'bg-amber-950/10': acc.status === 'verify', 'bg-red-950/10': acc.status === 'banned' }">
                         <td class="pl-6 py-4">
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" class="sr-only peer"
@@ -216,6 +216,10 @@
                             <div x-show="acc.status === 'verify'"
                                  class="text-[11px] text-amber-500 font-mono mt-0.5"
                                  x-text="acc.error || $store.global.t('verifyAccountToContinue')">
+                            </div>
+                            <div x-show="acc.status === 'banned'"
+                                 class="text-[11px] text-red-500 font-mono mt-0.5"
+                                 x-text="acc.error || $store.global.t('accountBannedDesc')">
                             </div>
                         </td>
                         <td class="py-4">
@@ -295,17 +299,13 @@
                                          :class="acc.status === 'ok' ?
                                                  'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' :
                                                  (acc.status === 'banned' ?
-                                                  'bg-red-800 shadow-[0_0_8px_rgba(153,27,27,0.6)]' :
+                                                  'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' :
                                                   'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]')">
                                     </div>
                                     <span class="text-xs font-mono font-semibold"
-                                          :class="acc.status === 'ok' ? 'text-neon-green' : (acc.status === 'banned' ? 'text-red-800' : 'text-red-400')"
+                                          :class="acc.status === 'ok' ? 'text-neon-green' : (acc.status === 'banned' ? 'text-red-500' : 'text-red-400')"
                                           x-text="acc.status.toUpperCase()">
                                     </span>
-                                    <p x-show="acc.status === 'banned'"
-                                       class="text-[9px] text-red-600/70 mt-0.5 max-w-[200px] leading-tight"
-                                       x-text="acc.error || 'Gemini disabled for ToS violation'">
-                                    </p>
                                 </div>
                             </template>
                         </td>
@@ -321,6 +321,16 @@
                                     <span x-text="$store.global.t('verify') || 'Verify'">Verify</span>
                                     <span class="text-sm font-bold">↗</span>
                                 </a>
+                                <!-- Appeal Button (banned accounts only) -->
+                                <a x-show="acc.status === 'banned'"
+                                   :href="acc.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9'"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="px-3 py-1.5 text-xs font-semibold font-mono rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all flex items-center gap-1.5 shadow-md shadow-red-600/20"
+                                   :title="$store.global.t('appealBan') || 'Submit an appeal to Google to reinstate this account'">
+                                    <span x-text="$store.global.t('appeal') || 'Appeal'">Appeal</span>
+                                    <span class="text-sm font-bold">↗</span>
+                                </a>
                                 <!-- Fix Button -->
                                 <button x-show="acc.status === 'invalid' && !acc.verificationUrl && !acc.verifyUrl"
                                     class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 transition-all"
@@ -328,13 +338,6 @@
                                     x-text="$store.global.t('fix')">
                                     FIX
                                 </button>
-                                <!-- Appeal Button (banned accounts only) -->
-                                <a x-show="acc.status === 'banned'"
-                                   href="mailto:gemini-code-assist-user-feedback@google.com"
-                                   class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-red-900/20 text-red-400 hover:bg-red-900/30 border border-red-800/30 hover:border-red-800/50 transition-all"
-                                   title="Email Google to appeal this ban">
-                                   APPEAL
-                                </a>
                                 <!-- Settings Button (threshold) -->
                                 <button class="p-2 rounded hover:bg-white/10 text-gray-500 hover:text-neon-yellow transition-colors"
                                     @click="openThresholdModal(acc)"
@@ -424,7 +427,7 @@
         <!-- Account Cards -->
         <template x-for="acc in filteredAccounts" :key="acc.email">
             <div class="rounded-2xl p-4 transition-all border"
-                 :class="acc.status === 'verify' ? 'bg-[#181308] border-amber-900/60 shadow-lg shadow-amber-950/20' : 'bg-[#121217] border-space-border/60'">
+                 :class="acc.status === 'verify' ? 'bg-[#181308] border-amber-900/60 shadow-lg shadow-amber-950/20' : (acc.status === 'banned' ? 'bg-[#180a0a] border-red-900/60 shadow-lg shadow-red-950/20' : 'bg-[#121217] border-space-border/60')">
 
                 <!-- Top Row: Switch + Email + Quick Actions -->
                 <div class="flex items-center justify-between gap-3 mb-2.5">
@@ -437,13 +440,23 @@
                             <div class="w-9 h-5 bg-space-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-gray-600 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-neon-green peer-checked:after:bg-white"></div>
                         </label>
                         <!-- Email -->
-                        <span class="font-mono text-sm font-semibold text-gray-200 truncate"
-                              x-text="formatEmail(Redact.email(acc.email))"
-                              :title="Redact.email(acc.email)">
-                        </span>
+                        <div class="min-w-0 flex-1">
+                            <span class="font-mono text-sm font-semibold text-gray-200 truncate block"
+                                  x-text="formatEmail(Redact.email(acc.email))"
+                                  :title="Redact.email(acc.email)">
+                            </span>
+                            <div x-show="acc.status === 'verify'"
+                                 class="text-[11px] text-amber-500 font-mono mt-0.5 truncate"
+                                 x-text="acc.error || $store.global.t('verifyAccountToContinue')">
+                            </div>
+                            <div x-show="acc.status === 'banned'"
+                                 class="text-[11px] text-red-500 font-mono mt-0.5 truncate"
+                                 x-text="acc.error || $store.global.t('accountBannedDesc')">
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Quick Actions: Verify + Settings + Refresh + Delete -->
+                    <!-- Quick Actions: Verify + Appeal + Settings + Refresh + Delete -->
                     <div class="flex items-center gap-1 flex-shrink-0">
                         <a x-show="acc.status === 'verify' || acc.verificationUrl || acc.verifyUrl"
                            :href="acc.verificationUrl || acc.verifyUrl"
@@ -452,6 +465,15 @@
                            class="px-2 py-1 text-[11px] font-semibold font-mono rounded-lg bg-amber-500 hover:bg-amber-400 text-black transition-all flex items-center gap-1 shadow-sm"
                            :title="$store.global.t('verifyAccount') || 'Verify account'">
                             <span x-text="$store.global.t('verify') || 'Verify'">Verify</span>
+                            <span class="font-bold">↗</span>
+                        </a>
+                        <a x-show="acc.status === 'banned'"
+                           :href="acc.appealUrl || 'https://forms.gle/hGzM9MEUv2azZsrb9'"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="px-2 py-1 text-[11px] font-semibold font-mono rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all flex items-center gap-1 shadow-sm"
+                           :title="$store.global.t('appealBan') || 'Submit an appeal to Google to reinstate this account'">
+                            <span x-text="$store.global.t('appeal') || 'Appeal'">Appeal</span>
                             <span class="font-bold">↗</span>
                         </a>
                         <button class="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-neon-yellow transition-colors"
