@@ -57,16 +57,14 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     const isClaudeModel = modelFamily === 'claude';
     const isGeminiModel = modelFamily === 'gemini';
 
-    // Thinking is enabled on-demand (matching omniroute) or when model explicitly has -thinking in name
-    const hasThinkingSuffix = modelName.toLowerCase().includes('thinking');
-    const isThinkingExplicitlyEnabled = thinking?.type === 'enabled' || thinking?.type === 'adaptive';
-    const hasEffortConfig = typeof output_config?.effort === 'string' && output_config.effort.toLowerCase() !== 'none';
+    // Thinking is enabled for thinking models (e.g. Gemini 3+, Claude -thinking, codename models)
+    // or on-demand when requested by client / effort config
     const isThinkingExplicitlyDisabled = thinking?.type === 'disabled';
-
     const shouldEnableThinking = !isThinkingExplicitlyDisabled && (
-        isThinkingExplicitlyEnabled ||
-        hasEffortConfig ||
-        hasThinkingSuffix
+        isThinkingModel(modelName) ||
+        thinking?.type === 'enabled' ||
+        thinking?.type === 'adaptive' ||
+        (typeof output_config?.effort === 'string' && output_config.effort.toLowerCase() !== 'none')
     );
 
     const googleRequest = {
@@ -213,26 +211,28 @@ export function convertAnthropicToGoogle(anthropicRequest) {
 
             googleRequest.generationConfig.thinkingConfig = thinkingConfig;
         } else if (isGeminiModel) {
-            let budget = 4096;
-            if (typeof thinking?.budget_tokens === 'number') {
-                budget = thinking.budget_tokens;
-            } else if (typeof output_config?.effort === 'string') {
+            // Gemini thinking config (uses camelCase)
+            // For callers that did not explicitly request thinking and asked for small max_tokens,
+            // use minimal thinking budget (32) and reserve output headroom so thinking doesn't
+            // consume the entire maxOutputTokens budget and return empty text.
+            let defaultBudget = undefined;
+            if (typeof output_config?.effort === 'string') {
                 const effortMap = { low: 1024, medium: 8192, high: 16384, max: 24576 };
-                budget = effortMap[output_config.effort.toLowerCase()] || 4096;
+                defaultBudget = effortMap[output_config.effort.toLowerCase()] || 4096;
             }
-
-            const thinkingBudget = clampGeminiThinkingBudget(modelName, budget);
+            const requestedBudget = thinking?.budget_tokens
+                ? clampGeminiThinkingBudget(modelName, thinking.budget_tokens)
+                : (max_tokens && max_tokens <= 1024 ? 32 : clampGeminiThinkingBudget(modelName, defaultBudget));
             const thinkingConfig = {
-                includeThoughts: true,
-                thinkingBudget
+                includeThoughts: Boolean(thinking?.type === 'enabled' || thinking?.budget_tokens || !max_tokens || max_tokens > 256),
+                thinkingBudget: requestedBudget
             };
             logger.debug(`[RequestConverter] Gemini thinking enabled with budget: ${thinkingConfig.thinkingBudget}`);
 
-            // Ensure maxOutputTokens is greater than thinkingBudget so thoughts don't exhaust the full response cap
             const currentMaxTokens = googleRequest.generationConfig.maxOutputTokens;
-            if (currentMaxTokens && currentMaxTokens <= thinkingBudget) {
-                const adjustedMaxTokens = Math.min(thinkingBudget + 4096, GEMINI_MAX_OUTPUT_TOKENS);
-                logger.debug(`[RequestConverter] Adjusting Gemini max_tokens from ${currentMaxTokens} to ${adjustedMaxTokens} for thinking budget`);
+            if (currentMaxTokens && currentMaxTokens <= thinkingConfig.thinkingBudget) {
+                const adjustedMaxTokens = Math.min(thinkingConfig.thinkingBudget + Math.max(currentMaxTokens, 8192), GEMINI_MAX_OUTPUT_TOKENS);
+                logger.debug(`[RequestConverter] Adjusting Gemini maxOutputTokens from ${currentMaxTokens} to ${adjustedMaxTokens} to exceed thinkingBudget (${thinkingConfig.thinkingBudget})`);
                 googleRequest.generationConfig.maxOutputTokens = adjustedMaxTokens;
             }
 
