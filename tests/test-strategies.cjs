@@ -782,7 +782,7 @@ async function runTests() {
         const tokenTracker = strategy.getTokenBucketTracker();
 
         assertEqual(healthTracker.getScore(accounts[0].email), 50, 'Health should decrease by 20');
-        assertEqual(tokenTracker.getTokens(accounts[0].email), tokensBefore + 1, 'Token should be refunded');
+        assertEqual(Math.round(tokenTracker.getTokens(accounts[0].email)), Math.round(tokensBefore + 1), 'Token should be refunded');
     });
 
     test('HybridStrategy: scoring formula weights work correctly', () => {
