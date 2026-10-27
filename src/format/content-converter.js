@@ -69,8 +69,26 @@ export function validateAndSanitizeImage(source) {
         if (width > 16384 || height > 16384 || (width / height > 200) || (height / width > 200)) {
             return { valid: false, reason: `Extreme PNG dimensions (${width}x${height})` };
         }
-        const tail = buffer.subarray(Math.max(0, buffer.length - 32)).toString('binary');
-        if (!tail.includes('IEND')) {
+
+        // Walk chunks to verify integrity and detect truncated IDAT/data chunks
+        let offset = 8;
+        let foundIend = false;
+        while (offset < buffer.length) {
+            if (offset + 12 > buffer.length) {
+                return { valid: false, reason: 'Corrupt PNG (incomplete chunk header)' };
+            }
+            const chunkLen = buffer.readUInt32BE(offset);
+            const chunkType = buffer.toString('ascii', offset + 4, offset + 8);
+            if (offset + 12 + chunkLen > buffer.length) {
+                return { valid: false, reason: `Truncated PNG (chunk ${chunkType} declared length ${chunkLen} exceeds file size)` };
+            }
+            offset += 12 + chunkLen;
+            if (chunkType === 'IEND') {
+                foundIend = true;
+                break;
+            }
+        }
+        if (!foundIend) {
             return { valid: false, reason: 'Truncated PNG (missing IEND chunk)' };
         }
         return { valid: true, mimeType, data: rawData };
