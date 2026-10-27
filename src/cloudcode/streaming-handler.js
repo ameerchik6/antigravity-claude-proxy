@@ -25,6 +25,7 @@ import { parseResetTime } from './rate-limit-parser.js';
 import { buildCloudCodeRequest, buildHeaders } from './request-builder.js';
 import { streamSSEResponse } from './sse-streamer.js';
 import { getFallbackModel } from '../fallback-config.js';
+import { isInvalidMediaError, stripImagesFromGoogleRequest } from '../format/content-converter.js';
 import {
     getRateLimitBackoff,
     clearRateLimitState,
@@ -149,6 +150,7 @@ export async function* sendMessageStream(anthropicRequest, accountManager, fallb
             let lastError = null;
             let capacityRetryCount = 0;
             let endpointIndex = 0;
+            let mediaRetryAttempted = false;
 
             while (endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length) {
                 const endpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[endpointIndex];
@@ -280,8 +282,13 @@ export async function* sendMessageStream(anthropicRequest, accountManager, fallb
                         }
 
                         // 400 errors are client errors - fail immediately, don't retry or switch accounts
-                        // Examples: token limit exceeded, invalid schema, malformed request
+                        // Exception: 400 INVALID_MEDIA (error 2011) - strip broken images and retry once
                         if (response.status === 400) {
+                            if (!mediaRetryAttempted && isInvalidMediaError(errorText) && stripImagesFromGoogleRequest(payload.request)) {
+                                mediaRetryAttempted = true;
+                                logger.warn(`[CloudCode] 400 INVALID_MEDIA (2011) at ${endpoint}. Stripped images from request, retrying...`);
+                                continue;
+                            }
                             logger.error(`[CloudCode] Invalid request (400): ${errorText.substring(0, 200)}`);
                             throw new Error(`invalid_request_error: ${errorText}`);
                         }

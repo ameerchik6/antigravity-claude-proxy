@@ -23,6 +23,7 @@ const tests = [
     { name: 'Multi-turn Tools (Streaming)', file: 'test-multiturn-thinking-tools-streaming.cjs' },
     { name: 'Interleaved Thinking', file: 'test-interleaved-thinking.cjs' },
     { name: 'Image Support', file: 'test-images.cjs' },
+    { name: 'Image Sanitizer & Validator', file: 'test-image-sanitizer.cjs' },
     { name: 'Prompt Caching', file: 'test-caching-streaming.cjs' },
     { name: 'Cross-Model Thinking', file: 'test-cross-model-thinking.cjs' },
     { name: 'OAuth No-Browser Mode', file: 'test-oauth-no-browser.cjs' },
